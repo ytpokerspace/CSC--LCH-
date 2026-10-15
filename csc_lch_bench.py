@@ -1,0 +1,1236 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""
+csc_lch_bench.py - real-API benchmark harness for the CSC-LCH Emoji Glyphic Engine (spec v3.0)
+
+Standard library only (no pip installs) so it runs on Termux / Pydroid / a library PC.
+
+WHAT IT MEASURES
+  Every token count comes from Anthropic's /v1/messages/count_tokens endpoint, which does
+  not run the model and is documented as free (rate-limited). Nothing guesses a tokenizer
+  unless you pass --dry-run (offline smoke test; numbers are NOT real).
+
+  1. GLYPH AUDIT    tokens(glyph) vs tokens(word it replaces), all 54 pairs, per model
+  2. INFOGRAPHIC    your PNG counted as an image vs the same spec as plain text
+  3. ABLATION       dedup -> safe compress -> glyphs -> defer T4/T5, on a corpus, plus the
+                    overhead a model needs to decode it (glyph legend + hydrate tool)
+  4. PROJECTION     $ at 8k..1M-token contexts, uncached and prompt-cached, with a
+                    hydration-rate model and break-even points
+  5. QUALITY (opt)  live Q&A: original vs compressed contexts, with a real hydrate() tool
+                    loop; records accuracy, REAL usage tokens, calls, latency, $ per question
+
+QUICK START
+  export ANTHROPIC_API_KEY=sk-ant-...        (or just run it; it will ask, and never saves it)
+  python3 csc_lch_bench.py --image 1002.png                # free: sections 1-4
+  python3 csc_lch_bench.py --image 1002.png --quality      # + live test (~$1, asks first)
+  python3 csc_lch_bench.py --corpus my_context.txt --quality   # YOUR data (strongly advised)
+  python3 csc_lch_bench.py --dry-run                       # offline logic check only
+
+CORPUS FILE FORMAT (--corpus): plain text, segments separated by blank lines. Optional tier
+tag at the start of a segment: [T0]..[T5]. Untagged files are tiered by age (oldest = T5).
+Optional --qa file.json: [{"q": "...", "must": ["regex"], "forbid": ["regex"]}, ...]
+
+HONEST LIMITS (also printed at the end of the report)
+  * The built-in corpus is synthetic. Savings depend on how much of YOUR context is
+    duplicated / deferrable. Use --corpus for numbers that mean anything.
+  * Projections are arithmetic on measured ratios, not measured savings at scale.
+  * This tests the idea as a prompt-level layer (what an API customer could build). A
+    change inside a model's serving stack is a different experiment.
+"""
+from __future__ import annotations
+
+import argparse
+import atexit
+import base64
+import getpass
+import hashlib
+import json
+import math
+import os
+import random
+import re
+import struct
+import sys
+import time
+import urllib.error
+import urllib.request
+from collections import Counter
+from dataclasses import dataclass
+from datetime import date, datetime, timedelta
+
+VERSION = "1.0"
+API_VERSION = "2023-06-01"
+DEFAULT_MODELS = "claude-sonnet-5-5,claude-sonnet-4-6"
+
+# USD per million tokens. Source: platform.claude.com/docs/en/about-claude/pricing (read 2026-10-14).
+# Prices change: verify, or override with --price-in/--price-out/--price-read/--price-write.
+PRICE_NOTE = "pricing page read 2026-10-14; verify before relying on $"
+PRICES = {
+    "claude-sonnet-5-5": dict(inp=2.0, out=10.0, w5=2.5, read=0.10),
+    "claude-opus-5-5": dict(inp=4.0, out=20.0, w5=5.0, read=0.20),
+    "claude-fable-5-1": dict(inp=10.0, out=50.0, w5=12.5, read=0.25),
+    "claude-haiku-5-5": dict(inp=0.10, out=0.50, w5=0.125, read=0.01, over=100000,
+                             hi=dict(inp=0.50, out=2.50, w5=0.625, read=0.05)),
+    "claude-sonnet-4-6": dict(inp=3.0, out=15.0, w5=3.75, read=0.30),
+    "claude-haiku-4-5": dict(inp=1.0, out=5.0, w5=1.25, read=0.10),
+}
+
+# ----------------------------------------------------------------------------- lexicon
+def G(*cps):
+    return "".join(chr(c) for c in cps)
+
+VS = 0xFE0F  # emoji variation selector, as typed on a phone keyboard
+
+# Best reading of the infographic's EMOJI GLYPH BLOCK (18 categories x 3). Edit freely or
+# pass --lexicon file.json  ({"IDENTITY": {"mind": "...", ...}, ...}).
+LEXICON = [
+    ("IDENTITY", [("mind", G(0x1F9E0)), ("user", G(0x1F464)), ("agent", G(0x1F916))]),
+    ("PEOPLE", [("team", G(0x1F465)), ("family", G(0x1F46A)), ("group", G(0x1FAC2))]),
+    ("CONTEXT", [("world", G(0x1F310)), ("info", G(0x1F4C4)), ("data", G(0x1F5C2, VS))]),
+    ("TIME", [("time", G(0x23F1, VS)), ("date", G(0x1F4C5)), ("duration", G(0x1F570, VS))]),
+    ("LOCATION", [("place", G(0x1F4CD)), ("home", G(0x1F3E0)), ("map", G(0x1F5FA, VS))]),
+    ("OBJECTS", [("item", G(0x1F4E6)), ("tool", G(0x1F527)), ("device", G(0x1F4F1))]),
+    ("ACTIONS", [("act", G(0x2699, VS)), ("run", G(0x1F504)), ("stop", G(0x1F6D1))]),
+    ("LOGIC", [("if", G(0x1F914)), ("while", G(0x1F501)), ("branch", G(0x1F500))]),
+    ("MATH", [("add", G(0x2795)), ("sub", G(0x2796)), ("mul", G(0x2716, VS))]),
+    ("DATA", [("list", G(0x1F4CB)), ("map", G(0x1F5FA, VS)), ("set", G(0x1F5C3, VS))]),
+    ("IO", [("send", G(0x1F4E4)), ("recv", G(0x1F4E5)), ("read", G(0x1F4C2))]),
+    ("FLOW", [("link", G(0x1F517)), ("refs", G(0x1F516)), ("async", G(0x1F300))]),
+    ("CONTROL", [("halt", G(0x26D4)), ("pass", G(0x2705)), ("fail", G(0x274C))]),
+    ("COMMUNICATE", [("msg", G(0x1F4AC)), ("print", G(0x1F4E3)), ("reply", G(0x2709, VS))]),
+    ("STORAGE", [("save", G(0x1F4BE)), ("load", G(0x1F5C4, VS)), ("del", G(0x1F5D1, VS))]),
+    ("SECURITY", [("auth", G(0x1F512)), ("perm", G(0x1F511)), ("cap", G(0x1F6E1, VS))]),
+    ("RESOURCES", [("fs", G(0x1F331)), ("net", G(0x1F310)), ("exec", G(0x26A1))]),
+    ("UTILITY", [("util", G(0x2728)), ("search", G(0x1F50E)), ("config", G(0x1F39B, VS))]),
+]
+# Tier icons as drawn in the infographic (crown, target, bolt, book, hourglass, box).
+TIER_GLYPH = {0: G(0x1F451), 1: G(0x1F3AF), 2: G(0x26A1), 3: G(0x1F4D6), 4: G(0x23F3), 5: G(0x1F4E6)}
+# Markers this harness puts on deferred-entry stubs (T5 uses an ice cube because the box
+# icon is already the 'item' glyph).
+STUB_MARK = {4: G(0x23F3), 5: G(0x1F9CA)}
+
+SPEC_TEXT = """CSC-LCH EMOJI GLYPHIC ENGINE v3.0 - Cascading Semantic Compression + Lazy Context Hydration
+Author: William Gunnell Cox, 2026. Less Tokens, Same Meaning, More Possibilities.
+
+TIER HIERARCHY
+T0 Immutable Anchors (1.00): Safety, Instructions, Format, Critical Facts
+T1 Core Semantic (0.90): Goal, Task, Facts, Success Criteria
+T2 Active Context (0.75): Current State, Constraints, Dependencies
+T3 Supporting Context (0.40): Examples, Explanations, Evidence
+T4 Deferred Context (0.08): Background, History, Secondary
+T5 Archive (0.02): Inactive, Redundant, Reference
+
+EMOJI GLYPH BLOCK
+IDENTITY: mind, user, agent. PEOPLE: team, family, group. CONTEXT: world, info, data.
+TIME: time, date, duration. LOCATION: place, home, map. OBJECTS: item, tool, device.
+ACTIONS: act, run, stop. LOGIC: if, while, branch. MATH: add, sub, mul.
+DATA: list, map, set. IO: send, recv, read. FLOW: link, refs, async.
+CONTROL: halt, pass, fail. COMMUNICATE: msg, print, reply. STORAGE: save, load, del.
+SECURITY: auth, perm, cap. RESOURCES: fs, net, exec. UTILITY: util, search, config.
+
+SEMANTIC MARKERS
+OBS: directly observed or explicitly supplied.
+INF: inferred from evidence.
+SPEC: speculation, not verified.
+RULES: Never convert INF/SPEC to OBS. Preserve qualifications and uncertainty. Do not treat missing info as negative evidence.
+
+COMPRESSION POLICY
+REMOVE (when safe): exact duplicates, redundant filler, repeated explanations.
+PRESERVE (always): negations, quantities and units, dates and identifiers, causal relationships, exceptions, uncertainty, source attribution, dependencies, safety constraints.
+PROHIBIT: unsupported fact insertion, silent constraint removal, ambiguous substitutions, lossy compression of critical info.
+FALLBACK: use original uncompressed context.
+
+COMPILER / VM FLOW
+Source (emoji program / text) -> Lexer (tokenize glyphs) -> Parser (build AST) -> Type checker (validate semantics) -> Capability check (verify permissions) -> VM / native (execute handler)
+
+PROCESSING PIPELINE
+1 Ingest: receive prompt + context. 2 Classify: instructions, facts, goals, examples, speculation. 3 Anchor: protect T0 + essential T1. 4 Deduplicate: remove repeats. 5 Compress: shorten safely. 6 Index: reference deferred context. 7 Hydrate: fetch when needed. 8 Validate: check meaning + constraints. 9 Expand (if needed): restore original when uncertain.
+
+LAZY CONTEXT HYDRATION
+Retrieve only what's needed, when it's needed.
+Triggers: missing fact, ambiguous reference, decision depends on deferred info, validation risk.
+Policy: fetch minimal context, verify source, don't claim retrieval, fail safe (no fabrication).
+
+TOKEN TYPES (EXAMPLE): String "text", Number 123, List [...], Map {...}, Object @id
+EXAMPLE EMOJI PROGRAM: \U0001F4E6\U0001F5FA\uFE0F\U0001F4CB = load_data(); \U0001F504\U0001F914\u2699\uFE0F = analyze(\U0001F5FA\uFE0F\U0001F4CB); \U0001F914\U0001F4AC = result
+LANGUAGE RULES: Emoji for identity. ASCII for reproducibility. No block letters (BOMB banned). Deterministic resolution. No silent incompatibility.
+BENCHMARK METRICS: token usage (gen + exec), first-pass correctness, execution time, resolver accuracy, registry cost.
+EXPECTED WIN: Fewer tokens with equal or better correctness.
+EMOJI NATIVE / SEMANTIC REFERENCED / COMPRESSION WITHOUT REGRESSION
+"""
+
+HYDRATE_TOOL = {
+    "name": "hydrate",
+    "description": "Return the exact original text of one deferred context entry (a stub such as [s12]). "
+                   "Call it only when the answer may depend on that entry.",
+    "input_schema": {
+        "type": "object",
+        "properties": {"id": {"type": "string", "description": "Entry id, e.g. s12"}},
+        "required": ["id"],
+    },
+}
+BASE_SYSTEM = ("Answer using only the provided context. Reply in one short line. "
+               "If the context does not contain the answer, reply 'unknown'.")
+
+# ----------------------------------------------------------------------------- small utils
+def hr(title):
+    print("\n" + "=" * 58)
+    print(title)
+    print("=" * 58)
+
+def fi(n):
+    return "{:,}".format(int(round(n)))
+
+def money(x):
+    if abs(x) >= 100:
+        return "$" + format(x, ",.0f")
+    if abs(x) >= 1:
+        return "$%.2f" % x
+    return "$%.4f" % x
+
+def pc(a, b):
+    return 0.0 if not b else 100.0 * a / float(b)
+
+def tbl(rows, widths, left=(0,)):
+    for r in rows:
+        cells = []
+        for i, (c, w) in enumerate(zip(r, widths)):
+            s = str(c)
+            if len(s) > w:
+                s = s[: w - 1] + "~"
+            cells.append(s.ljust(w) if i in left else s.rjust(w))
+        print(" ".join(cells).rstrip())
+
+class Tee(object):
+    def __init__(self, path):
+        self.f = open(path, "w", encoding="utf-8")
+        self.o = sys.stdout
+    def write(self, s):
+        self.o.write(s)
+        self.f.write(s)
+    def flush(self):
+        self.o.flush()
+        self.f.flush()
+
+# ----------------------------------------------------------------------------- API client
+class ApiError(Exception):
+    def __init__(self, msg, status=None):
+        Exception.__init__(self, msg)
+        self.status = status
+
+def _collect(o, acc):
+    if isinstance(o, str):
+        acc.append(o)
+    elif isinstance(o, dict):
+        if o.get("type") == "image":
+            acc.append("\x00IMAGE")
+        else:
+            for v in o.values():
+                _collect(v, acc)
+    elif isinstance(o, (list, tuple)):
+        for v in o:
+            _collect(v, acc)
+
+def estimate_tokens(body):
+    """Crude offline stand-in used ONLY by --dry-run. Not a tokenizer."""
+    acc = []
+    _collect(body.get("system"), acc)
+    _collect(body.get("messages"), acc)
+    n = 7.0
+    for s in acc:
+        if s == "\x00IMAGE":
+            n += 1600
+            continue
+        a = sum(1 for ch in s if ord(ch) < 128)
+        n += a / 3.8 + (len(s) - a) * 2.2
+    if body.get("tools"):
+        n += 286 + len(json.dumps(body["tools"])) / 3.5
+    return int(math.ceil(n))
+
+class Api(object):
+    def __init__(self, key, base_url="https://api.anthropic.com", dry_run=False,
+                 cache_path=None, min_interval=0.03):
+        self.key = key
+        self.base = base_url.rstrip("/")
+        self.dry = dry_run
+        self.cache_path = None if dry_run else cache_path
+        self.cache = {}
+        self.min_interval = min_interval
+        self._last = 0.0
+        self._dirty = 0
+        self.n_count = 0
+        self.n_msg = 0
+        self.no_effort = set()
+        if self.cache_path and os.path.exists(self.cache_path):
+            try:
+                with open(self.cache_path, "r", encoding="utf-8") as f:
+                    self.cache = json.load(f)
+            except Exception:
+                self.cache = {}
+        atexit.register(self.save)
+
+    def save(self):
+        if not self.cache_path or not self._dirty:
+            return
+        try:
+            tmp = self.cache_path + ".tmp"
+            with open(tmp, "w", encoding="utf-8") as f:
+                json.dump(self.cache, f)
+            os.replace(tmp, self.cache_path)
+            self._dirty = 0
+        except Exception:
+            self.cache_path = None
+
+    def _post(self, path, body, retries=6):
+        data = json.dumps(body, ensure_ascii=False).encode("utf-8")
+        headers = {
+            "content-type": "application/json",
+            "x-api-key": self.key or "",
+            "anthropic-version": API_VERSION,
+            "user-agent": "csc-lch-bench/" + VERSION,
+        }
+        delay = 2.0
+        last = None
+        for attempt in range(retries):
+            wait = self.min_interval - (time.time() - self._last)
+            if wait > 0:
+                time.sleep(wait)
+            self._last = time.time()
+            req = urllib.request.Request(self.base + path, data=data, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=180) as r:
+                    return json.loads(r.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                txt = e.read().decode("utf-8", "replace")
+                last = ApiError("HTTP %d on %s: %s" % (e.code, path, txt[:400]), e.code)
+                if e.code in (408, 409, 429, 500, 502, 503, 504, 529) and attempt < retries - 1:
+                    try:
+                        w = float(e.headers.get("retry-after"))
+                    except (TypeError, ValueError):
+                        w = delay
+                    time.sleep(min(max(w, 0.5), 60))
+                    delay = min(delay * 2, 60)
+                    continue
+                raise last
+            except (urllib.error.URLError, TimeoutError, ConnectionError, OSError) as e:
+                last = ApiError("network error on %s: %s" % (path, e))
+                if attempt < retries - 1:
+                    time.sleep(delay)
+                    delay = min(delay * 2, 60)
+                    continue
+                raise last
+        raise last or ApiError("request failed")
+
+    def count(self, model, content=None, system=None, tools=None, messages=None):
+        if messages is None:
+            messages = [{"role": "user", "content": content}]
+        body = {"model": model, "messages": messages}
+        if system:
+            body["system"] = system
+        if tools:
+            body["tools"] = tools
+        raw = ("dry" if self.dry else self.base) + "|" + model + "|" + json.dumps(body, sort_keys=True, ensure_ascii=False)
+        key = hashlib.sha256(raw.encode("utf-8")).hexdigest()
+        if key in self.cache:
+            return self.cache[key]
+        if self.dry:
+            n = estimate_tokens(body)
+        else:
+            n = int(self._post("/v1/messages/count_tokens", body)["input_tokens"])
+        self.n_count += 1
+        self.cache[key] = n
+        self._dirty += 1
+        if self._dirty >= 20:
+            self.save()
+        return n
+
+    def message(self, model, system, messages, tools=None, max_tokens=2000, effort="low"):
+        body = {"model": model, "max_tokens": max_tokens, "messages": messages}
+        if system:
+            body["system"] = system
+        if tools:
+            body["tools"] = tools
+        use_effort = bool(effort) and model not in self.no_effort
+        if use_effort:
+            body["output_config"] = {"effort": effort}
+        self.n_msg += 1
+        try:
+            return self._post("/v1/messages", body)
+        except ApiError as e:
+            if use_effort and e.status == 400 and ("effort" in str(e) or "output_config" in str(e)):
+                self.no_effort.add(model)
+                body.pop("output_config", None)
+                return self._post("/v1/messages", body)
+            raise
+
+class Meter(object):
+    """Counts content tokens net of the fixed per-request framing overhead."""
+    def __init__(self, api, model):
+        self.api = api
+        self.model = model
+        self.overhead = max(0, api.count(model, ".") - 1)
+
+    def tok(self, text):
+        if not text or not text.strip():
+            return 0
+        return max(0, self.api.count(self.model, text) - self.overhead)
+
+    def tok_blocks(self, blocks):
+        return max(0, self.api.count(self.model, blocks) - self.overhead)
+
+    def tools_overhead(self, tools):
+        return self.api.count(self.model, ".", tools=tools) - self.api.count(self.model, ".")
+
+# ----------------------------------------------------------------------------- lexicon tools
+def lex_pairs(lex):
+    return [(cat, w, g) for cat, items in lex for (w, g) in items]
+
+def load_lexicon(path):
+    if not path:
+        return LEXICON
+    with open(path, "r", encoding="utf-8") as f:
+        d = json.load(f)
+    return [(cat, list(m.items())) for cat, m in d.items()]
+
+def validate_lexicon(lex):
+    issues = []
+    by_g, by_w = {}, {}
+    for cat, w, g in lex_pairs(lex):
+        by_g.setdefault(g, set()).add(w)
+        by_w.setdefault(w, []).append(cat)
+    for w, cats in by_w.items():
+        if len(cats) > 1:
+            issues.append("word '%s' is listed in %s" % (w, " and ".join(cats)))
+    for g, ws in by_g.items():
+        if len(ws) > 1:
+            issues.append("glyph %s stands for %s" % (g, " and ".join(sorted(ws))))
+    for t, g in TIER_GLYPH.items():
+        if g in by_g:
+            issues.append("glyph %s is the T%d tier icon AND the glyph for '%s'" % (g, t, "/".join(sorted(by_g[g]))))
+    return issues
+
+def usable_pairs(lex):
+    """word -> glyph, excluding glyphs that stand for more than one distinct word."""
+    by_g = {}
+    for cat, w, g in lex_pairs(lex):
+        by_g.setdefault(g, set()).add(w)
+    return {w: g for cat, w, g in lex_pairs(lex) if len(by_g[g]) == 1}
+
+SPLIT_RX = re.compile(r"(`[^`\n]*`|https?://\S+)")
+
+def glyph_encode(text, w2g):
+    if not w2g or any(g in text for g in w2g.values()):
+        return text  # fail-safe: glyph already present in source text
+    rx = re.compile(r"\b(" + "|".join(sorted((re.escape(w) for w in w2g), key=len, reverse=True)) + r")\b")
+    parts = SPLIT_RX.split(text)
+    for i in range(0, len(parts), 2):
+        parts[i] = rx.sub(lambda m: w2g[m.group(1)], parts[i])
+    return "".join(parts)
+
+def glyph_decode(text, w2g):
+    if not w2g:
+        return text
+    g2w = {g: w for w, g in w2g.items()}
+    rx = re.compile("|".join(sorted((re.escape(g) for g in g2w), key=len, reverse=True)))
+    parts = SPLIT_RX.split(text)
+    for i in range(0, len(parts), 2):
+        parts[i] = rx.sub(lambda m: g2w[m.group(0)], parts[i])
+    return "".join(parts)
+
+# ----------------------------------------------------------------------------- text analysis
+RX_NUM = re.compile(r"[\w.:/%+-]*\d[\w.:/%+-]*")
+RX_NEG = re.compile(r"\b(?:not|no|never|none|cannot|can't|won't|don't|doesn't|isn't|aren't|wasn't|weren't|without|neither|nor)\b", re.I)
+RX_UNC = re.compile(r"\b(?:probably|possibly|likely|unlikely|might|may|could|approximately|about|roughly|estimated|unverified|unconfirmed|appears?|seems?)\b", re.I)
+RX_MOD = re.compile(r"\b(?:must|shall|required|only|always|except|unless|until)\b", re.I)
+RX_MARK = re.compile(r"\b(?:OBS|INF|SPEC)\b")
+
+def crit_tokens(text):
+    """Things the spec says to PRESERVE always: numbers/dates/ids, negations, uncertainty, modals, markers."""
+    out = [m.group(0).rstrip(".:/-+,;").lower() for m in RX_NUM.finditer(text)]
+    for rx in (RX_NEG, RX_UNC, RX_MOD):
+        out += [m.group(0).lower() for m in rx.finditer(text)]
+    out += [m.group(0) for m in RX_MARK.finditer(text)]
+    return Counter(t for t in out if t)
+
+def norm_text(t):
+    return re.sub(r"\s+", " ", t.strip().lower())
+
+def shingles(t, n=5):
+    w = t.split()
+    if len(w) <= n:
+        return {" ".join(w)}
+    return {" ".join(w[i:i + n]) for i in range(len(w) - n + 1)}
+
+FILL_SUBS = [
+    (r"\bin order to\b", "to"),
+    (r"\bdue to the fact that\b", "because"),
+    (r"\bat this point in time\b", "now"),
+    (r"\bin the event that\b", "if"),
+    (r"\b(?:is|are) able to\b", "can"),
+    (r"\ba large number of\b", "many"),
+    (r"\ba majority of\b", "most"),
+    (r"\bprior to\b", "before"),
+    (r"\bsubsequent to\b", "after"),
+    (r"\bfor the purpose of\b", "for"),
+]
+DROP_PHRASES = [
+    r"please note that", r"it is important to note that", r"it should be noted that",
+    r"as mentioned previously,?", r"as discussed earlier,?", r"needless to say,?",
+    r"basically,?", r"essentially,?",
+]
+
+def compress_text(text):
+    t = text
+    for pat, rep in FILL_SUBS:
+        t = re.sub(pat, lambda m, rep=rep: rep.capitalize() if m.group(0)[0].isupper() else rep, t, flags=re.I)
+    for ph in DROP_PHRASES:
+        t = re.sub(r"(" + ph + r"\s+)(\w)",
+                   lambda m: m.group(2).upper() if m.group(1)[0].isupper() else m.group(2), t, flags=re.I)
+    t = re.sub(r"[ \t]+", " ", t)
+    t = re.sub(r" ?\n ?", "\n", t)
+    t = re.sub(r"\n{3,}", "\n\n", t)
+    return t.strip()
+
+# ----------------------------------------------------------------------------- pipeline
+@dataclass
+class Seg:
+    id: str
+    tier: int
+    text: str
+
+def join(segs):
+    return "\n\n".join(s.text for s in segs)
+
+def dedup(segs, thresh=0.8):
+    """Exact duplicates (any tier) and near-duplicates (T2+ only), never dropping new numbers/negations."""
+    kept, dropped = [], []
+    exact, inv, ksh, kcrit = {}, {}, [], []
+    for s in segs:
+        nt = norm_text(s.text)
+        if nt in exact:
+            dropped.append((s.id, "exact", kept[exact[nt]].id))
+            continue
+        sh = shingles(nt)
+        near = None
+        if s.tier >= 2:
+            cand = Counter()
+            for g in sh:
+                for k in inv.get(g, ()):
+                    cand[k] += 1
+            ctoks = set(crit_tokens(s.text))
+            for k, c in cand.most_common(8):
+                if kept[k].tier < 2:
+                    continue
+                jac = c / float(len(sh) + len(ksh[k]) - c)
+                if jac >= thresh and ctoks <= kcrit[k]:
+                    near = k
+                    break
+        if near is not None:
+            dropped.append((s.id, "near", kept[near].id))
+            continue
+        idx = len(kept)
+        kept.append(s)
+        ksh.append(sh)
+        kcrit.append(set(crit_tokens(s.text)))
+        exact[nt] = idx
+        for g in sh:
+            inv.setdefault(g, []).append(idx)
+    return kept, dropped
+
+def compress_segments(segs):
+    out, fallbacks = [], []
+    for s in segs:
+        if s.tier <= 1:  # ANCHOR: T0 and T1 are protected, only whitespace-normalised
+            out.append(Seg(s.id, s.tier, s.text.strip()))
+            continue
+        c = compress_text(s.text)
+        if crit_tokens(c) != crit_tokens(s.text):  # VALIDATE -> FALLBACK to original
+            fallbacks.append(s.id)
+            out.append(s)
+        else:
+            out.append(Seg(s.id, s.tier, c))
+    return out, fallbacks
+
+def glyph_segments(segs, w2g):
+    out, bad = [], 0
+    for s in segs:
+        if s.tier <= 1:
+            out.append(s)  # anchors stay verbatim
+            continue
+        e = glyph_encode(s.text, w2g)
+        if glyph_decode(e, w2g) != s.text:  # resolver round-trip must be exact
+            bad += 1
+            out.append(s)
+        else:
+            out.append(Seg(s.id, s.tier, e))
+    return out, bad
+
+def make_stub(s, original_text):
+    words = original_text.split()
+    title = " ".join(words[:10]).replace('"', "'") + ("..." if len(words) > 10 else "")
+    mark = STUB_MARK.get(s.tier, STUB_MARK[4])
+    return '%s[%s] T%d "%s" ~%dt' % (mark, s.id, s.tier, title, max(1, int(len(original_text) / 3.6)))
+
+def defer(inline_segs, originals, from_tier):
+    out, store = [], {}
+    for s in inline_segs:
+        if s.tier >= from_tier:
+            store[s.id] = originals[s.id]
+            out.append(Seg(s.id, s.tier, make_stub(s, originals[s.id])))
+        else:
+            out.append(s)
+    return out, store
+
+def registry_text(used_pairs, has_stubs, text):
+    lines = []
+    if used_pairs:
+        lines.append("Glyph legend (glyph=word): " + " ".join("%s=%s" % (g, w) for w, g in used_pairs))
+        lines.append("Read each glyph as its word. A glyph is never new information.")
+    if RX_MARK.search(text):
+        lines.append("Markers: OBS=observed, INF=inferred, SPEC=speculative. Never upgrade INF/SPEC to OBS.")
+    if has_stubs:
+        lines.append("Entries like [s12] with an hourglass/ice-cube mark are deferred text. If the answer may "
+                     "depend on one, call hydrate(id) for its exact text. Never guess deferred content.")
+    return "\n".join(lines)
+
+def build_variants(segs, pairs, aware, defer_from):
+    t0 = time.perf_counter()
+    s1, dropped = dedup(segs)
+    originals = {s.id: s.text for s in s1}
+    s2, fallbacks = compress_segments(s1)
+    out = {"S0": join(segs), "S1": join(s1), "S2": join(s2), "dropped": dropped, "fallbacks": fallbacks,
+           "n_dedup_kept": len(s1)}
+    s3n, bad_n = glyph_segments(s2, pairs)
+    s3a, bad_a = glyph_segments(s2, aware)
+    out["S3n"], out["S3a"] = join(s3n), join(s3a)
+    out["resolver_total"] = sum(1 for s in s2 if s.tier > 1)
+    out["resolver_bad"] = bad_n
+    variants = {}
+    for name, inline, gmap in (("literal", s3n, pairs), ("noglyph", s2, {}), ("aware", s3a, aware)):
+        if name == "aware" and (not aware or out["S3a"] == out["S2"]):
+            continue
+        d, store = defer(inline, originals, defer_from)
+        text = join(d)
+        used = [(w, g) for w, g in gmap.items() if g in text]
+        variants[name] = dict(text=text, store=store, used=used, n_stubs=len(store),
+                              registry=registry_text(used, bool(store), text))
+    out["variants"] = variants
+    out["cpu_ms"] = (time.perf_counter() - t0) * 1000.0
+    return out
+
+# ----------------------------------------------------------------------------- corpus + QA
+def build_synthetic(scale=3, seed=7):
+    rnd = random.Random(seed)
+    S = []
+    S.append((0, "SYSTEM RULES: You are the migration assistant for Project HELIOS. Always answer in one short line. "
+                 "Never reveal customer PII (names, emails, card data) in any answer. The production snapshot of "
+                 "ledger-db must NOT be deleted before the 30-day retention window has ended, except when the "
+                 "Security Officer gives written approval. Every production deploy requires approval from the "
+                 "on-call lead, and no deploy may happen during the freeze window. Please note that these rules "
+                 "apply to every request in this conversation."))
+    S.append((1, "GOAL: Migrate billing-svc from cluster us-east-2 to cluster eu-west-3 by 2026-11-18 with zero "
+                 "customer-facing downtime. TASKS: (1) migrate tenants in four phases, (2) rotate the service "
+                 "certificates, (3) cut over the ledger-db read replica, (4) decommission the old cluster after 14 "
+                 "days of stable operation."))
+    S.append((1, "SUCCESS CRITERIA: p99 latency must stay under 240 ms, the error rate must stay below 0.1%, and no "
+                 "tenant may lose any invoice. In order to protect customers, rollback must be possible within 20 "
+                 "minutes until phase 4 starts."))
+    S.append((4, "BACKGROUND: In March 2025 an outage of billing-svc lasted 47 minutes because an expired certificate "
+                 "was not rotated in time. The postmortem (PM-2025-03) recommended automated certificate rotation "
+                 "and a 14-day expiry alert. As mentioned previously, this incident is the main reason certificate "
+                 "rotation is a task in this project."))
+    S.append((4, "DESIGN HISTORY: The original 2025 plan targeted cluster ap-south-1, but it was changed to eu-west-3 "
+                 "after a data-residency review that was finalized on 2025-09-09. The review found that customer "
+                 "ledger data had to stay in the EU, and the new region was also estimated to be about 18% cheaper."))
+    S.append((5, "ARCHIVE - meeting notes 2025-06-12 (design review): attendees were Dana Whitfield, Omar Haddad and "
+                 "Lee Park. Action items: Omar to draft the rollout plan; Lee Park to benchmark the ledger-db "
+                 "replica; Dana to open the certificate ticket. This plan was later superseded."))
+    foot = ("CONFIDENTIAL - INTERNAL USE ONLY. This message may contain legally privileged information. If you are "
+            "not the intended recipient, delete it and notify the sender. Do not forward outside the company.")
+    n = 12 * scale
+    daily = []
+    for i in range(n):
+        day = date(2026, 9, 1) + timedelta(days=int(i * 59 / max(1, n - 1)))
+        pct = int(2 + i * 56 / max(1, n - 1))
+        mins = 5 + (i * 7) % 6
+        daily.append((day.isoformat(), pct))
+        S.append((4, "DAILY SUMMARY %s (history): Migration progress was %d%% of tenants. Canary batch %d completed in "
+                     "%d minutes with no customer impact. The on-call report was reviewed and nothing unusual was "
+                     "found." % (day.isoformat(), pct, i + 1, mins)))
+        if i % 5 == 4:
+            S.append((5, foot))
+    S.append((3, "EVIDENCE (staging benchmark, run 2026-10-21): p99 latency was 212 ms and the error rate was 0.04% at "
+                 "3,000 requests per second. Source: perf-report PR-889 by the SRE team."))
+    S.append((3, "EXPLANATION: We use canary releases because a full cutover would make rollback slower than the "
+                 "20-minute limit. A canary sends 5% of traffic to the new cluster for 30 minutes before the next "
+                 "step. It is important to note that every canary must pass the p99 check before traffic is "
+                 "increased."))
+    S.append((3, "EXAMPLE: To roll back tenant batch 7, run `helios rollback --batch 7 --to us-east-2`, then verify "
+                 "with `helios verify --batch 7`. For example, batch 3 was rolled back on 2026-10-27 in 11 minutes."))
+    rep = ("REPLICA CHECK: Before each canary step the on-call lead opens the dashboards for the new cluster, "
+           "confirms that the error budget is intact, verifies that the ledger-db replica lag is below %d seconds, "
+           "and posts the result in the migration channel. If any check fails, the step is paused and the on-call "
+           "lead decides whether to roll back or to wait for the next window. Every decision is written to the "
+           "migration log so that the audit team can review it later.")
+    S.append((3, rep % 2))
+    for b in range(4 * scale):
+        t0 = datetime(2026, 10, 1 + (b % 28), 8 + (b % 9), rnd.randint(0, 59), 0)
+        lines = []
+        for k in range(14):
+            ts = (t0 + timedelta(seconds=45 * k)).strftime("%Y-%m-%dT%H:%M:%SZ")
+            lines.append("%s batch=%d phase=2 step=canary traffic=%d%% p99=%dms err=%.2f%% pods=%d" % (
+                ts, b + 1, 5 + (k % 4) * 5, rnd.randint(170, 235), rnd.uniform(0.01, 0.09), rnd.randint(18, 24)))
+        S.append((3, "LOG EXCERPT (canary batch %d):\n%s" % (b + 1, "\n".join(lines))))
+    S.append((2, "STATUS (2026-11-01): Phase 2 of 4 is in progress. 58% of tenants have been migrated to eu-west-3. "
+                 "The migration is currently blocked by ticket OPS-4417 (certificate rotation for auth-gateway), "
+                 "which was opened by Dana Whitfield."))
+    S.append((2, "DEPENDENCIES: billing-svc depends on ledger-db v14.2 and on auth-gateway. Phase 3 cannot start until "
+                 "OPS-4417 is closed, because the new certificates are required for the replica handshake."))
+    cons = ("The change freeze runs from 2026-11-12 to 2026-11-15. No deploys are allowed during that window. "
+            "Emergency fixes are the only exception and need two approvals.")
+    S.append((2, "CONSTRAINTS: " + cons))
+    S.append((2, "REMINDER: " + cons))
+    S.append((2, "[INF] The certificate rotation delay is probably caused by the expired intermediate CA, but this has "
+                 "not been verified. [OBS] The auth-gateway logs show handshake failures starting 2026-10-30 at 14:05 "
+                 "UTC."))
+    S.append((2, (rep % 3) + " Revision of 2026-11-02."))
+    S.append((2, "STATUS (2026-11-02): Phase 2 of 4 is in progress. 62% of tenants have been migrated to eu-west-3. "
+                 "The migration is currently blocked by ticket OPS-4417 (certificate rotation for auth-gateway), "
+                 "which was opened by Dana Whitfield."))
+    segs = [Seg("s%d" % (i + 1), t, x) for i, (t, x) in enumerate(S)]
+    qi = n // 3
+    return segs, build_qa(daily[qi])
+
+def build_qa(daily_q):
+    d1 = r"(2026-11-12|nov\w*\.?\s+12|12\s+nov)"
+    d2 = r"(2026-11-15|nov\w*\.?\s+15|\b15\b)"
+    d3 = r"(2026-11-18|nov\w*\.?\s+18|18\s+nov)"
+    neg = r"(\bno\b|\bnot\b|cannot|can't|never|prohibited|forbidden|must not)"
+    day, pct = daily_q
+    return [
+        dict(cat="safety/negation", tier=0, q="Can the ledger-db production snapshot be deleted 10 days after cutover?",
+             must=[neg], forbid=[r"^\W*yes\b"]),
+        dict(cat="exception", tier=0, q="What is the only exception that allows deleting the snapshot early?",
+             must=[r"security officer", r"written"]),
+        dict(cat="id+date", tier=1, q="Which target cluster and deadline apply to the migration?",
+             must=[r"eu-west-3", d3]),
+        dict(cat="quantity", tier=1, q="What p99 latency limit must be met?", must=[r"\b240\b"]),
+        dict(cat="quantity", tier=1, q="Within how many minutes must a rollback be possible?", must=[r"\b20\b"]),
+        dict(cat="latest-state", tier=2, q="As of the latest status update, what percentage of tenants is migrated?",
+             must=[r"\b62\b"]),
+        dict(cat="identifier", tier=2, q="Which ticket is blocking the migration?", must=[r"OPS-4417"]),
+        dict(cat="causal", tier=2, q="Why can phase 3 not start yet?", must=[r"(OPS-4417|certificate)"]),
+        dict(cat="date-range", tier=2, q="During which dates is the change freeze in effect?", must=[d1, d2]),
+        dict(cat="uncertainty", tier=2, q="Has the root cause of the certificate rotation delay been confirmed?",
+             must=[r"(not\s+(yet\s+)?(been\s+)?(confirmed|verified)|unconfirmed|unverified|inferred|probabl|\bno\b)"],
+             forbid=[r"^\W*yes\b"]),
+        dict(cat="revised-number", tier=2, q="What is the current ledger-db replica lag limit (use the latest revision)?",
+             must=[r"\b3\b"]),
+        dict(cat="source", tier=3, q="Which report is the source of the staging p99 benchmark?", must=[r"PR-889"]),
+        dict(cat="quantity", tier=3, q="How many minutes did the rollback of batch 3 take?", must=[r"\b11\b"]),
+        dict(cat="deferred", tier=4, q="How long did the March 2025 billing-svc outage last?", must=[r"\b47\b"]),
+        dict(cat="deferred", tier=4, q="What percentage of tenants was migrated according to the daily summary of %s?" % day,
+             must=[r"\b%d\b" % pct]),
+        dict(cat="deferred", tier=4, q="Why was the target region changed from ap-south-1?", must=[r"residency"]),
+        dict(cat="deferred", tier=5,
+             q="Who was assigned to benchmark the ledger-db replica in the 2025-06-12 design review?",
+             must=[r"lee\s+park"]),
+    ]
+
+def load_corpus_file(path, tiering):
+    with open(path, "r", encoding="utf-8", errors="replace") as f:
+        raw = f.read()
+    blocks = [b.strip() for b in re.split(r"\n\s*\n", raw) if b.strip()]
+    parsed, tagged = [], 0
+    for b in blocks:
+        m = re.match(r"\[T([0-5])\]\s*", b)
+        if m:
+            tagged += 1
+            parsed.append((int(m.group(1)), b[m.end():]))
+        else:
+            parsed.append((None, b))
+    use_tags = tiering == "tags" or (tiering == "auto" and tagged > 0)
+    n = len(parsed)
+    segs = []
+    for i, (t, b) in enumerate(parsed):
+        if use_tags:
+            tier = t if t is not None else 3
+        else:
+            f = i / float(max(1, n - 1))
+            tier = 0 if i == 0 else (5 if f < 0.25 else 4 if f < 0.55 else 3 if f < 0.80 else 2)
+        segs.append(Seg("s%d" % (i + 1), tier, b))
+    return segs, ("tags" if use_tags else "recency")
+
+# ----------------------------------------------------------------------------- pricing + projection
+def get_price(model, prompt_tokens, args):
+    if args.price_in is not None:
+        pin = args.price_in
+        return dict(inp=pin, out=args.price_out if args.price_out is not None else pin * 5.0,
+                    read=args.price_read if args.price_read is not None else pin * 0.1,
+                    w5=args.price_write if args.price_write is not None else pin * 1.25)
+    p = PRICES.get(model) or PRICES["claude-sonnet-5-5"]
+    if "over" in p and prompt_tokens > p["over"]:
+        return p["hi"]
+    return p
+
+HYDRATION_OUT_TOKENS = 60  # tool-call output per hydration
+
+def request_cost(model, args, ctx_tokens, seg_avg, h, hit):
+    """Expected $ per request: (uncached, cached). h = expected hydration calls per request."""
+    p = get_price(model, ctx_tokens, args)
+    unc = ctx_tokens * p["inp"] * (1 + h) + h * (seg_avg * p["inp"] + HYDRATION_OUT_TOKENS * p["out"])
+    cac = (ctx_tokens * (hit * p["read"] + (1 - hit) * p["w5"])
+           + h * (ctx_tokens * p["read"] + seg_avg * p["inp"] + HYDRATION_OUT_TOKENS * p["out"]))
+    return unc / 1e6, cac / 1e6
+
+# ----------------------------------------------------------------------------- benchmark sections
+def read_image(path):
+    with open(path, "rb") as f:
+        raw = f.read()
+    w = h = None
+    if raw[:8] == b"\x89PNG\r\n\x1a\n":
+        mt = "image/png"
+        w, h = struct.unpack(">II", raw[16:24])
+    elif raw[:3] == b"\xff\xd8\xff":
+        mt = "image/jpeg"
+        i = 2
+        while i + 9 < len(raw):
+            if raw[i] != 0xFF:
+                i += 1
+                continue
+            m = raw[i + 1]
+            if m in (0xC0, 0xC1, 0xC2, 0xC3, 0xC5, 0xC6, 0xC7, 0xC9, 0xCA, 0xCB, 0xCD, 0xCE, 0xCF):
+                h, w = struct.unpack(">HH", raw[i + 5:i + 9])
+                break
+            i += 2 + struct.unpack(">H", raw[i + 2:i + 4])[0]
+    elif raw[:6] in (b"GIF87a", b"GIF89a"):
+        mt = "image/gif"
+        w, h = struct.unpack("<HH", raw[6:10])
+    elif raw[:4] == b"RIFF" and raw[8:12] == b"WEBP":
+        mt = "image/webp"
+    else:
+        raise SystemExit("Unsupported image type (use PNG, JPEG, GIF or WebP): " + path)
+    return mt, base64.b64encode(raw).decode("ascii"), w, h, len(raw)
+
+def section_audit(meter, lex, report):
+    rows = []
+    base = meter.api.count(meter.model, "a b")
+    for cat, w, g in lex_pairs(lex):
+        cw = meter.api.count(meter.model, "a %s b" % w) - base
+        cg = meter.api.count(meter.model, "a %s b" % g) - base
+        rows.append(dict(cat=cat, word=w, glyph=g, cw=cw, cg=cg))
+    tw, tg = sum(r["cw"] for r in rows), sum(r["cg"] for r in rows)
+    less = [r for r in rows if r["cg"] < r["cw"]]
+    same = [r for r in rows if r["cg"] == r["cw"]]
+    more = [r for r in rows if r["cg"] > r["cw"]]
+    dist = Counter(min(r["cg"], 4) for r in rows)
+    print("  %d pairs | words total %d tok | glyphs total %d tok (%+.0f%%)" % (len(rows), tw, tg, pc(tg - tw, tw)))
+    print("  glyph cheaper: %d | equal: %d | costlier: %d" % (len(less), len(same), len(more)))
+    print("  glyph tokens each: 1:%d  2:%d  3:%d  4+:%d" % (dist[1], dist[2], dist[3], dist[4]))
+    worst = sorted(more, key=lambda r: r["cw"] - r["cg"])[:6]
+    if worst:
+        print("  costliest vs word (word->glyph tok):")
+        for r in worst:
+            print("    %-9s %d -> %d  %s" % (r["word"], r["cw"], r["cg"], r["glyph"]))
+    if less:
+        print("  glyphs that beat their word:")
+        for r in sorted(less, key=lambda r: r["cg"] - r["cw"])[:8]:
+            print("    %-9s %d -> %d  %s" % (r["word"], r["cw"], r["cg"], r["glyph"]))
+    report["audit"] = dict(words_tok=tw, glyph_tok=tg, cheaper=len(less), equal=len(same), costlier=len(more),
+                           rows=rows)
+    return rows
+
+def section_image(meter, img, report):
+    mt, b64, w, h, nbytes = img
+    blocks = [{"type": "image", "source": {"type": "base64", "media_type": mt, "data": b64}}]
+    t_img = meter.tok_blocks(blocks)
+    t_txt = meter.tok(SPEC_TEXT)
+    est = (w * h / 750.0) if (w and h) else None
+    print("  image %s %sx%s (%.0f KB)" % (mt.split("/")[1], w, h, nbytes / 1024.0))
+    print("  as image (API count)      %7s tok" % fi(t_img))
+    if est:
+        print("  docs formula w*h/750      %7s tok" % fi(est))
+    print("  same spec as plain text   %7s tok  (%+.0f%% vs image)" % (fi(t_txt), pc(t_txt - t_img, t_img)))
+    print("  (text = my transcription of the infographic; edit SPEC_TEXT for exactness)")
+    report["image"] = dict(image_tok=t_img, text_tok=t_txt, formula=est, w=w, h=h)
+
+def section_ablation(meter, segs, lex, audit_rows, args, report):
+    pairs = usable_pairs(lex)
+    aware = {r["word"]: r["glyph"] for r in audit_rows if r["cg"] < r["cw"] and pairs.get(r["word"]) == r["glyph"]}
+    V = build_variants(segs, pairs, aware, args.defer_from)
+    tok = meter.tok
+    t0, t1, t2 = tok(V["S0"]), tok(V["S1"]), tok(V["S2"])
+    t3n, t3a = tok(V["S3n"]), tok(V["S3a"])
+    tools_ovh = meter.tools_overhead([HYDRATE_TOOL])
+    rows = [("stage", "tokens", "% of S0")]
+    rows.append(("S0 original", fi(t0), "100.0"))
+    rows.append(("S1 +dedup", fi(t1), "%.1f" % pc(t1, t0)))
+    rows.append(("S2 +safe compress", fi(t2), "%.1f" % pc(t2, t0)))
+    rows.append(("S3 +glyphs (as spec'd)", fi(t3n), "%.1f" % pc(t3n, t0)))
+    if aware:
+        rows.append(("S3' +glyphs (token-aware)", fi(t3a), "%.1f" % pc(t3a, t0)))
+    nets = {}
+    labels = {"literal": "as specified", "noglyph": "no glyph layer", "aware": "token-aware glyphs"}
+    for name, v in V["variants"].items():
+        inline = tok(v["text"])
+        reg = tok(v["registry"])
+        fixed = reg + (tools_ovh if v["store"] else 0)
+        nets[name] = dict(inline=inline, registry=reg, tools=tools_ovh if v["store"] else 0, fixed=fixed,
+                          total=inline + fixed, n_stubs=v["n_stubs"])
+        rows.append(("S4 +defer [%s]" % labels[name], fi(inline), "%.1f" % pc(inline, t0)))
+    tbl(rows, (28, 9, 8))
+    print("  -- fixed overhead the model needs --")
+    for name, n in nets.items():
+        print("  %-18s legend %4d + tool %4d = %4d tok" % (labels[name], n["registry"], n["tools"], n["fixed"]))
+    print("  -- NET (inline + overhead) vs original --")
+    for name, n in nets.items():
+        d = n["total"] - t0
+        print("  %-18s %7s tok  %+6.1f%%  (%s)" % (labels[name], fi(n["total"]), pc(d, t0),
+                                                   "saves" if d < 0 else "COSTS MORE"))
+    drops = Counter(k for _, k, _ in V["dropped"])
+    print("  dedup dropped: %d exact, %d near | compress fallbacks: %d" % (drops["exact"], drops["near"], len(V["fallbacks"])))
+    ok = V["resolver_total"] - V["resolver_bad"]
+    print("  resolver round-trip exact: %d/%d | pipeline CPU %.0f ms" % (ok, V["resolver_total"], V["cpu_ms"]))
+    tiers = Counter()
+    for s in segs:
+        tiers[s.tier] += 1
+    print("  corpus: %d segments, tiers %s" % (len(segs), " ".join("T%d:%d" % (t, tiers[t]) for t in sorted(tiers))))
+    # average size of a deferred segment (for hydration cost)
+    store = V["variants"]["noglyph"]["store"]
+    seg_avg = (tok("\n\n".join(store.values())) / float(len(store))) if store else 0.0
+    print("  deferred entries: %d, avg %.0f tok each" % (len(store), seg_avg))
+    report["ablation"] = dict(S0=t0, S1=t1, S2=t2, S3_literal=t3n, S3_aware=t3a, nets=nets, tools_overhead=tools_ovh,
+                              seg_avg=seg_avg, dedup=dict(drops), fallbacks=len(V["fallbacks"]),
+                              aware_glyphs=len(aware), resolver=[ok, V["resolver_total"]])
+    return V, nets, t0, seg_avg, labels
+
+def section_projection(model, args, nets, t0, seg_avg, h_meas, labels, report):
+    sizes = [int(x) for x in args.sizes.split(",") if x.strip()]
+    hit = args.cache_hit
+    print("  model %s | prices: %s" % (model, PRICE_NOTE))
+    print("  cache-hit rate %.0f%% | h = hydration calls/request %s" % (
+        hit * 100, "(measured live)" if h_meas else "(assumed %.2f, see sensitivity)" % args.hydration))
+    print("  assumes the measured corpus mix scales to larger contexts")
+    proj = {}
+    for mode, idx in (("UNCACHED", 0), ("PROMPT-CACHED", 1)):
+        print("\n  %s  ($ per 1,000 requests; saving vs original)" % mode)
+        names = list(nets.keys())
+        head = ["ctx tok", "original"] + [labels[n][:10] for n in names]
+        rows = [tuple(head)]
+        for C in sizes:
+            base = request_cost(model, args, C, seg_avg, 0.0, hit)[idx] * 1000
+            r = [fi(C), money(base)]
+            for n in names:
+                v = nets[n]
+                comp = C * (v["inline"] / float(t0)) + v["fixed"]
+                h = h_meas.get(n, args.hydration) if h_meas else args.hydration
+                if not v["n_stubs"]:
+                    h = 0.0
+                cost = request_cost(model, args, comp, seg_avg, h, hit)[idx] * 1000
+                r.append("%+.0f%%" % pc(cost - base, base))
+                proj.setdefault(str(C), {}).setdefault(n, {})[mode] = dict(cost_1k=cost, orig_1k=base)
+            rows.append(tuple(r))
+        tbl(rows, tuple([9, 9] + [10] * len(names)))
+    # break-evens for the headline variant
+    head = "literal" if "literal" in nets else list(nets.keys())[0]
+    v = nets[head]
+    r = v["inline"] / float(t0)
+    if r < 1:
+        print("\n  break-even context (no hydration), '%s': ~%s tokens" % (labels[head], fi(v["fixed"] / (1 - r))))
+    else:
+        print("\n  '%s' never breaks even: inline text is not smaller than the original" % labels[head])
+    print("  headline variant '%s': %.2fx more history fits in the same window (inline only)" % (
+        labels[head], 1.0 / r if r > 0 else 0))
+    mid = 128000 if 128000 in sizes else sizes[len(sizes) // 2]
+    comp = mid * r + v["fixed"]
+    base = request_cost(model, args, mid, seg_avg, 0.0, hit)[0]
+    print("\n  hydration sensitivity at %s-token context (uncached saving, '%s'):" % (fi(mid), labels[head]))
+    cells = []
+    for h in (0.0, 0.1, 0.25, 0.5, 1.0):
+        c = request_cost(model, args, comp, seg_avg, h if v["n_stubs"] else 0.0, hit)[0]
+        cells.append("h=%.2f:%+.0f%%" % (h, pc(c - base, base)))
+    print("   " + "  ".join(cells))
+    report["projection"] = dict(model=model, sizes=sizes, cache_hit=hit, detail=proj)
+
+def user_msg(cond, q):
+    return "<context>\n%s\n</context>\n\nQuestion: %s" % (cond["context"], q)
+
+def norm_id(x):
+    x = re.sub(r"[^\w]", "", str(x))
+    return ("s" + x) if x.isdigit() else x
+
+def clean_blocks(blocks):
+    out = []
+    for b in blocks or []:
+        t = b.get("type")
+        if t == "text":
+            if b.get("text"):
+                out.append({"type": "text", "text": b["text"]})
+        elif t == "tool_use":
+            out.append({"type": "tool_use", "id": b["id"], "name": b["name"], "input": b.get("input", {})})
+        else:
+            out.append(b)  # thinking blocks go back unmodified
+    return out
+
+def ask(api, model, cond, question, args):
+    msgs = [{"role": "user", "content": user_msg(cond, question)}]
+    tin = tout = calls = 0
+    hyd, first_in, stop, text = [], None, None, ""
+    for _ in range(5):
+        r = api.message(model, cond["system"], msgs, tools=cond.get("tools"), max_tokens=args.max_tokens,
+                        effort=args.effort)
+        u = r.get("usage") or {}
+        used = (int(u.get("input_tokens", 0) or 0) + int(u.get("cache_creation_input_tokens", 0) or 0)
+                + int(u.get("cache_read_input_tokens", 0) or 0))
+        tin += used
+        tout += int(u.get("output_tokens", 0) or 0)
+        calls += 1
+        if first_in is None:
+            first_in = used
+        blocks = clean_blocks(r.get("content"))
+        stop = r.get("stop_reason")
+        uses = [b for b in blocks if b.get("type") == "tool_use"]
+        if stop == "tool_use" and uses:
+            msgs.append({"role": "assistant", "content": blocks})
+            res = []
+            for b in uses:
+                sid = norm_id((b.get("input") or {}).get("id", ""))
+                hyd.append(sid)
+                body = cond["store"].get(sid)
+                res.append({"type": "tool_result", "tool_use_id": b["id"],
+                            "content": body if body is not None else "error: unknown id " + sid})
+            msgs.append({"role": "user", "content": res})
+            continue
+        text = "".join(b.get("text", "") for b in blocks if b.get("type") == "text").strip()
+        break
+    return text, dict(tin=tin, tout=tout, calls=calls, hyd=hyd, first_in=first_in, stop=stop)
+
+def score(ans, q):
+    a = ans or ""
+    ok = all(re.search(p, a, re.I) for p in q["must"])
+    bad = any(re.search(p, a, re.I | re.M) for p in q.get("forbid", []))
+    return bool(ok and not bad)
+
+def section_quality(api, model, V, nets, t0, qa, args, report):
+    conds = {"A original": dict(system=BASE_SYSTEM, context=V["S0"], tools=None, store={}, est=t0)}
+    names = {"literal": "B as-specified", "noglyph": "C no-glyph", "aware": "D token-aware"}
+    for name, v in V["variants"].items():
+        sysmsg = BASE_SYSTEM + ("\n\n" + v["registry"] if v["registry"] else "")
+        conds[names[name]] = dict(system=sysmsg, context=v["text"], tools=[HYDRATE_TOOL] if v["store"] else None,
+                                  store=v["store"], est=nets[name]["total"], key=name)
+    qa = qa[: args.max_questions] if args.max_questions else qa
+    p = get_price(model, t0, args)
+    est_in = sum(len(qa) * (c["est"] + 150) * (1.0 if k.startswith("A") else 1.4) for k, c in conds.items())
+    est_cost = est_in * p["inp"] / 1e6 + len(conds) * len(qa) * 400 * p["out"] / 1e6
+    print("  %d questions x %d conditions on %s. Estimated cost ~%s (%s tokens in)." % (
+        len(qa), len(conds), model, money(est_cost), fi(est_in)))
+    if not args.yes:
+        if input("  Run the live test? [y/N] ").strip().lower() != "y":
+            print("  skipped.")
+            return None, {}
+    res = {}
+    for cname, cond in conds.items():
+        rows = []
+        sys.stdout.write("  %-16s " % cname)
+        sys.stdout.flush()
+        for q in qa:
+            t_s = time.perf_counter()
+            try:
+                ans, meta = ask(api, model, cond, q["q"], args)
+            except ApiError as e:
+                ans, meta = "", dict(tin=0, tout=0, calls=0, hyd=[], first_in=0, stop="error:" + str(e)[:80])
+            dt = time.perf_counter() - t_s
+            ok = score(ans, q)
+            rows.append(dict(ok=ok, ans=ans[:140], dt=dt, cat=q["cat"], q=q["q"], **meta))
+            sys.stdout.write("." if ok else "x")
+            sys.stdout.flush()
+        sys.stdout.write("\n")
+        res[cname] = rows
+    # parity: does count_tokens predict real usage?
+    first_q = qa[0]["q"]
+    parity = {}
+    for cname, cond in conds.items():
+        est = api.count(model, system=cond["system"], tools=cond.get("tools"),
+                        messages=[{"role": "user", "content": user_msg(cond, first_q)}])
+        parity[cname] = (est, res[cname][0]["first_in"])
+    print("\n  %-15s %6s %9s %6s %6s %6s %9s" % ("condition", "right", "in tok/q", "calls", "hyd", "sec/q", "$ / 1k q"))
+    base_cost = None
+    summary = {}
+    for cname, rows in res.items():
+        n = len(rows)
+        right = sum(1 for r in rows if r["ok"])
+        tin = sum(r["tin"] for r in rows) / float(n)
+        tout = sum(r["tout"] for r in rows) / float(n)
+        calls = sum(r["calls"] for r in rows) / float(n)
+        hyd = sum(len(r["hyd"]) for r in rows) / float(n)
+        sec = sum(r["dt"] for r in rows) / float(n)
+        cost = (tin * p["inp"] + tout * p["out"]) / 1e6 * 1000
+        if base_cost is None:
+            base_cost = cost
+        print("  %-15s %3d/%-2d %9s %6.2f %6.2f %6.1f %9s %s" % (
+            cname, right, n, fi(tin), calls, hyd, sec, money(cost),
+            "" if cname.startswith("A") else "(%+.0f%% cost)" % pc(cost - base_cost, base_cost)))
+        summary[cname] = dict(right=right, n=n, in_tok_q=tin, out_tok_q=tout, calls_q=calls, hyd_q=hyd, sec_q=sec,
+                              cost_1k=cost, key=conds[cname].get("key"))
+    print("  (cost counts input+output at list price, no caching; includes hydration re-sends and thinking tokens)")
+    print("  count_tokens vs real usage on question 1 (est/actual): " +
+          "  ".join("%s %s/%s" % (k[:1], fi(a), fi(b)) for k, (a, b) in parity.items()))
+    base_ok = {i for i, r in enumerate(res["A original"]) if r["ok"]}
+    for cname, rows in res.items():
+        if cname.startswith("A"):
+            continue
+        reg = [(i, r) for i, r in enumerate(rows) if i in base_ok and not r["ok"]]
+        if reg:
+            print("  regressions in %s (A got it right):" % cname)
+            for i, r in reg[:6]:
+                print("    - [%s] %s -> %s%s" % (r["cat"], r["q"][:44], (r["ans"] or "(empty)")[:40],
+                                                  "  hyd=%s" % ",".join(r["hyd"]) if r["hyd"] else ""))
+    hmeas = {summ["key"]: summ["hyd_q"] for summ in summary.values() if summ["key"]}
+    report["quality"] = dict(model=model, summary=summary, parity=parity,
+                             per_question={k: [dict(ok=r["ok"], cat=r["cat"], hyd=r["hyd"], ans=r["ans"]) for r in v]
+                                           for k, v in res.items()})
+    return summary, hmeas
+
+def verdict(report, labels):
+    hr("VERDICT (generated from the numbers above)")
+    a = report.get("audit")
+    if a:
+        d = a["glyph_tok"] - a["words_tok"]
+        print("* Glyph vs word, per mention: %d of %d glyphs are cheaper, %d costlier (net %+d tok over the table)." % (
+            a["cheaper"], len(a["rows"]), a["costlier"], d))
+    ab = report.get("ablation")
+    if ab:
+        t0 = ab["S0"]
+        print("* Where the savings came from (corpus tokens): dedup %+d, safe compress %+d, as-spec'd glyphs %+d." % (
+            ab["S1"] - ab["S0"], ab["S2"] - ab["S1"], ab["S3_literal"] - ab["S2"]))
+        for name, n in ab["nets"].items():
+            d = n["total"] - t0
+            print("* NET '%s': %+.1f%% tokens (incl. %d tok legend+tool overhead)." % (labels[name], pc(d, t0), n["fixed"]))
+        print("* Dedup/compress/defer work without any emoji; compare 'no glyph layer' to 'as specified' to see what the glyphs add.")
+    q = report.get("quality")
+    if q:
+        s = q["summary"]
+        a_s = s["A original"]
+        for k, v in s.items():
+            if k.startswith("A"):
+                continue
+            print("* Live %s: %d/%d right vs %d/%d baseline; real cost %+.0f%%; hydrations/question %.2f." % (
+                k, v["right"], v["n"], a_s["right"], a_s["n"], pc(v["cost_1k"] - a_s["cost_1k"], a_s["cost_1k"]), v["hyd_q"]))
+    print("\nLIMITS: synthetic corpus unless --corpus; tier assignment here is oracle/recency, a real classifier adds")
+    print("cost and error; 25% of the QA needs deferred text, so hydration rate is a property of this test, not a")
+    print("law; projections scale measured ratios. Re-run on your own long contexts before quoting any figure.")
+
+def main():
+    ap = argparse.ArgumentParser(description="Real-API benchmark for the CSC-LCH Emoji Glyphic Engine")
+    ap.add_argument("--models", default=DEFAULT_MODELS, help="comma list; first working one is primary")
+    ap.add_argument("--primary", default=None)
+    ap.add_argument("--image", default=None, help="infographic PNG/JPEG to count as an image")
+    ap.add_argument("--corpus", default=None, help="text file of segments separated by blank lines")
+    ap.add_argument("--tiering", default="auto", choices=["auto", "tags", "recency"])
+    ap.add_argument("--qa", default=None, help="JSON list of {q, must, forbid} for --corpus")
+    ap.add_argument("--scale", type=int, default=3, help="size of the built-in synthetic corpus")
+    ap.add_argument("--defer-from", type=int, default=4, help="tiers >= this become stubs (default 4)")
+    ap.add_argument("--lexicon", default=None)
+    ap.add_argument("--sizes", default="8000,32000,128000,200000,1000000")
+    ap.add_argument("--cache-hit", type=float, default=0.9)
+    ap.add_argument("--hydration", type=float, default=0.15, help="assumed hydration calls/request if no live run")
+    ap.add_argument("--quality", action="store_true", help="run the live (paid) Q&A test")
+    ap.add_argument("--quality-model", default=None)
+    ap.add_argument("--effort", default="low", help="output_config.effort for live calls ('' to omit)")
+    ap.add_argument("--max-tokens", type=int, default=2000)
+    ap.add_argument("--max-questions", type=int, default=0)
+    ap.add_argument("--yes", action="store_true", help="do not ask before paid calls")
+    ap.add_argument("--dry-run", action="store_true", help="offline logic check; token numbers are NOT real")
+    ap.add_argument("--base-url", default="https://api.anthropic.com")
+    ap.add_argument("--api-key", default=None)
+    ap.add_argument("--no-cache", action="store_true")
+    ap.add_argument("--out", default="csc_lch_report")
+    ap.add_argument("--price-in", type=float, default=None)
+    ap.add_argument("--price-out", type=float, default=None)
+    ap.add_argument("--price-read", type=float, default=None)
+    ap.add_argument("--price-write", type=float, default=None)
+    args = ap.parse_args()
+
+    try:
+        sys.stdout.reconfigure(encoding="utf-8")
+    except Exception:
+        pass
+    try:
+        sys.stdout = Tee(args.out + ".txt")
+    except Exception:
+        pass
+
+    key = None
+    if not args.dry_run:
+        key = args.api_key or os.environ.get("ANTHROPIC_API_KEY") or getpass.getpass("ANTHROPIC_API_KEY (not saved): ").strip()
+        if not key:
+            raise SystemExit("No API key. Set ANTHROPIC_API_KEY or use --dry-run.")
+    api = Api(key, args.base_url, dry_run=args.dry_run,
+              cache_path=None if args.no_cache else ".csc_lch_cache.json")
+
+    hr("CSC-LCH BENCH v%s  %s" % (VERSION, "(DRY RUN: estimates, NOT real)" if args.dry_run else "(live token counts)"))
+    lex = load_lexicon(args.lexicon)
+    issues = validate_lexicon(lex)
+    print("Lexicon: %d glyph/word pairs; spec consistency check (as transcribed):" % len(lex_pairs(lex)))
+    for i in issues or ["none"]:
+        print("  - " + i)
+
+    if args.corpus:
+        segs, how = load_corpus_file(args.corpus, args.tiering)
+        qa = json.load(open(args.qa, "r", encoding="utf-8")) if args.qa else []
+        label = "%s (tiers by %s)" % (args.corpus, how)
+    else:
+        segs, qa = build_synthetic(args.scale)
+        label = "synthetic project-ops corpus, scale %d (oracle tiers)" % args.scale
+    print("Corpus: " + label)
+
+    meters = []
+    for m in [x.strip() for x in args.models.split(",") if x.strip()]:
+        try:
+            meters.append(Meter(api, m))
+        except ApiError as e:
+            print("Skipping model %s: %s" % (m, str(e)[:160]))
+    if not meters:
+        raise SystemExit("No usable model. Check your key/network or pass --models.")
+    primary = next((x for x in meters if x.model == args.primary), meters[0])
+    report = {"version": VERSION, "dry_run": args.dry_run, "corpus": label, "models": {}}
+    img = read_image(args.image) if args.image else None
+
+    results = {}
+    for m in meters:
+        hr("MODEL %s%s" % (m.model, "  [primary]" if m is primary else ""))
+        rm = report["models"].setdefault(m.model, {})
+        print("\n1. GLYPH AUDIT (emoji vs the word it replaces)")
+        rows = section_audit(m, lex, rm)
+        if img:
+            print("\n2. THE INFOGRAPHIC: image vs text")
+            section_image(m, img, rm)
+        print("\n3. PIPELINE ABLATION on corpus (%d segments)" % len(segs))
+        results[m.model] = section_ablation(m, segs, lex, rows, args, rm)
+
+    V, nets, t0, seg_avg, labels = results[primary.model]
+    summary, hmeas = None, {}
+    if args.quality:
+        hr("5. LIVE QUALITY TEST (real messages API)")
+        qmodel = args.quality_model or primary.model
+        if args.dry_run:
+            print("  --quality needs the real API; skipped in --dry-run.")
+        elif not qa:
+            print("  no QA set for this corpus (pass --qa file.json); skipped.")
+        else:
+            summary, hmeas = section_quality(api, qmodel, V, nets, t0, qa, args, report["models"][primary.model])
+    hr("4. PROJECTION to large contexts (%s)" % primary.model)
+    section_projection(primary.model, args, nets, t0, seg_avg, hmeas, labels, report["models"][primary.model])
+    rp = dict(report["models"][primary.model])
+    verdict(rp, labels)
+    api.save()
+    print("\nAPI calls this run: %d count_tokens (cached ones excluded), %d messages." % (api.n_count, api.n_msg))
+    try:
+        with open(args.out + ".json", "w", encoding="utf-8") as f:
+            json.dump(report, f, ensure_ascii=False, indent=1, default=str)
+        print("Saved: %s.txt and %s.json (send me the .txt)" % (args.out, args.out))
+    except Exception as e:
+        print("could not save json: %s" % e)
+
+if __name__ == "__main__":
+    main()
