@@ -18,23 +18,41 @@ The project treats this as an empirical question. It does not claim universal to
 - Synthetic corpus generation and a corpus-file input path.
 - An offline `--dry-run` mode that can exercise benchmark logic without an API key or model-generation calls.
 - Optional API-backed token counting and a separate optional live Q&A quality test.
-- A local `tiktoken` audit using `o200k_base`, with the prompt text and hydration-tool schema included in the counted payload; the automated CI result is pending verification.
+- A local `tiktoken` audit using `o200k_base`, with prompt text and hydration-tool schema included in the counted payload; the audit has now passed in GitHub Actions.
 - Automated offline regression tests and a GitHub Actions smoke run (proposed in PR #1).
 - Explicit reporting limits distinguishing synthetic data, estimated token counts, and live measurements.
 
 The Python harness is the executable benchmark. The YAML instruction set is a specification, not an independently executable optimizer.
 
-## Latest zero-cost CI smoke run
+## Latest zero-cost CI and local tokenizer audit
 
-On 2026-10-25, the offline CI workflow passed **4 regression tests** and completed the dry-run benchmark. The dry-run output reported:
+On 2026-10-25, GitHub Actions run [#40189573422](https://github.com/ytpokerspace/CSC--LCH-/actions/runs/40189573422) passed both jobs:
+- **Offline validation:** 4 regression tests passed; the dry-run benchmark and report upload completed.
+- **Tokenizer audit:** installed the public `tiktoken` package, ran the local `o200k_base` audit, and uploaded its report.
 
+The separate heuristic dry-run output reported:
 - 0 of 54 emoji glyphs cheaper than their corresponding words under the offline estimator; the glyph-vs-word table was +93 estimated token units.
 - Estimated net reduction of 4.9% for the no-glyph compression/defer variant and 3.4% for the variant as specified, including their recorded instruction/tool overhead.
 - 234 simulated count-token operations and 0 model-generation messages in dry-run mode.
 
-**These are offline heuristic estimates, not actual tokenizer counts or live-model measurements.** They do not prove that the same percentages apply to a real tokenizer or task. The preliminary direction is that emoji substitution should not be assumed to help token efficiency; it must earn its place in a measured comparison.
+These dry-run figures are **heuristic estimates**, not actual tokenizer counts.
 
-Run details and the downloadable report are available from the [offline CI workflow](https://github.com/ytpokerspace/CSC--LCH-/actions/runs/40188184996). The sponsor/readme/test/CI changes are in [draft PR #1](https://github.com/ytpokerspace/CSC--LCH-/pull/1); they are not merged into the default branch.
+### Local tokenizer audit result
+
+The `o200k_base` audit measured the exact concatenated prompt payload used by the script across 17 synthetic questions (seed 7, scale 1):
+
+| Condition | Mean tokens/question | Difference vs full context |
+|---|---:|---:|
+| Full context | 4,225.65 | Baseline |
+| Literal glyph layer + deferral | 4,086.65 | 3.29% fewer |
+| No glyph layer + deferral | 4,040.65 | 4.38% fewer |
+| Token-aware glyph layer + deferral | 4,086.65 | 3.29% fewer |
+
+The counted payload includes system instructions, context, question, and applicable registry/tool-schema text. These are **local tokenizer payload counts, not provider-reported usage or billed tokens**. Hydration is represented by tool-schema overhead only; the audit does not simulate actual hydration calls or count subsequently retrieved text. It also does not measure answer correctness or semantic equivalence.
+
+On this test, the no-glyph variant had the lowest measured prompt-payload count. The glyph variants did not improve on it. That is a useful negative result: emoji substitution should not be assumed to improve token efficiency.
+
+The workflow's downloadable reports are available in [GitHub Actions run #40189573422](https://github.com/ytpokerspace/CSC--LCH-/actions/runs/40189573422). The sponsor/readme/test/CI changes remain in [draft PR #1](https://github.com/ytpokerspace/CSC--LCH-/pull/1); they are not merged into the default branch.
 
 ## Evidence boundary
 
