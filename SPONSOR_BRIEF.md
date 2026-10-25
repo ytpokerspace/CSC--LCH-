@@ -18,6 +18,7 @@ The project treats this as an empirical question. It does not claim universal to
 - Synthetic corpus generation and a corpus-file input path.
 - An offline `--dry-run` mode that can exercise benchmark logic without an API key or model-generation calls.
 - Optional API-backed token counting and a separate optional live Q&A quality test.
+- A local `tiktoken` audit using `o200k_base`, with the prompt text and hydration-tool schema included in the counted payload; the automated CI result is pending verification.
 - Automated offline regression tests and a GitHub Actions smoke run (proposed in PR #1).
 - Explicit reporting limits distinguishing synthetic data, estimated token counts, and live measurements.
 
@@ -39,7 +40,7 @@ Run details and the downloadable report are available from the [offline CI workf
 
 Offline tests can establish that the harness runs and that specific transformations/retrieval checks behave as expected. They cannot establish that an LLM will answer more accurately or that the approach saves money in production.
 
-The dry-run tokenizer figures are estimates and must not be represented as actual model token counts. API-backed token-count measurements are different from live model-quality tests. The optional quality test makes live model calls and may incur charges.
+The dry-run tokenizer figures are estimates and must not be represented as actual model token counts. The local `o200k_base` audit provides exact counts for the text passed to that encoding, but it is not provider-reported request usage; chat framing and provider-specific tool accounting may differ. It also uses a synthetic corpus and does not measure answer quality or prove semantic equivalence. API-backed token-count measurements are different from live model-quality tests. The optional quality test makes live model calls and may incur charges.
 
 Any credible evaluation should compare, on the same frozen task set:
 
@@ -64,7 +65,7 @@ No unrestricted API access or unrestricted spending is requested.
 ## Milestones
 
 - **M1 — Reproducibility:** clean offline run and automated regression tests.
-- **M2 — Measurement quality:** real tokenizer accounting, all overhead included, task-level correctness and retrieval misses.
+- **M2 — Measurement quality:** verify the local tokenizer CI run, then extend accounting with provider-reported request counts where available; measure task-level correctness and retrieval misses.
 - **M3 — Adversarial evaluation:** negation, dates, quantities, identifiers, contradictory context, paraphrases, and cases where hydration is necessary.
 - **M4 — Controlled model study:** only with separate authorization and verified spending controls; compare all three configurations on a frozen task set.
 - **M5 — Decision:** publish measured trade-offs and decide whether the approach merits further integration.
