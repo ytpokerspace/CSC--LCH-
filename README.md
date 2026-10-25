@@ -23,6 +23,17 @@ python3 -m unittest discover -s tests -v
 
 No third-party Python packages are required for the benchmark harness and its offline tests.
 
+## Local tokenizer audit (no model calls)
+
+The optional tokenizer audit uses the public `tiktoken` package with its `o200k_base` encoding, associated with the GPT-4o model family. It counts the concatenated prompt text, including the CSC-LCH legend and hydration tool schema where applicable:
+
+```bash
+python3 -m pip install tiktoken
+python3 benchmarks/tokenizer_audit.py --scale 1 --out benchmark-results/tokenizer-audit
+```
+
+This does not call a provider API or generate model output. The counts are exact for the text passed to that local encoding, but they are **not provider-reported request counts or billed usage**: chat framing and provider-specific tool accounting can differ. The bundled corpus is synthetic, and this audit does not measure answer quality or prove semantic equivalence. CI runs this audit separately from the standard-library-only offline tests.
+
 ## Using your own context
 
 Prepare a UTF-8 plain-text file with context segments separated by blank lines. Optional tags `[T0]` through `[T5]` at the start of a segment let you specify tiers. Supply a separate JSON QA file if you want the optional quality test to score task-specific required/forbidden patterns.
