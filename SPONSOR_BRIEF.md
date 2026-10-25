@@ -33,7 +33,7 @@ On 2026-10-25, the offline CI workflow passed **4 regression tests** and complet
 
 **These are offline heuristic estimates, not actual tokenizer counts or live-model measurements.** They do not prove that the same percentages apply to a real tokenizer or task. The preliminary direction is that emoji substitution should not be assumed to help token efficiency; it must earn its place in a measured comparison.
 
-Run details and the downloadable report are available from the [offline CI workflow](https://github.com/ytpokerspace/CSC--LCH-/actions/runs/40188045260). The sponsor/readme/test/CI changes are in [draft PR #1](https://github.com/ytpokerspace/CSC--LCH-/pull/1); they are not merged into the default branch.
+Run details and the downloadable report are available from the [offline CI workflow](https://github.com/ytpokerspace/CSC--LCH-/actions/runs/40188184996). The sponsor/readme/test/CI changes are in [draft PR #1](https://github.com/ytpokerspace/CSC--LCH-/pull/1); they are not merged into the default branch.
 
 ## Evidence boundary
 
