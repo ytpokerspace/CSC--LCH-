@@ -94,7 +94,9 @@ def main() -> int:
 
     output = Path(args.out)
     output.parent.mkdir(parents=True, exist_ok=True)
-    output.with_suffix(".json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
+    json_path = Path(str(output) + ".json")
+    text_path = Path(str(output) + ".txt")
+    json_path.write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     lines = [
         "CSC-LCH LOCAL TOKENIZER AUDIT",
         "Encoding: o200k_base (GPT-4o-family tokenizer encoding)",
@@ -108,9 +110,9 @@ def main() -> int:
             name, result["mean_input_payload_tokens"], result["min_input_payload_tokens"],
             result["max_input_payload_tokens"], result["reduction_vs_full_context_pct"]))
     lines += ["", "LIMITATIONS: " + " ".join(report["limitations"])]
-    output.with_suffix(".txt").write_text("\n".join(lines) + "\n", encoding="utf-8")
+    text_path.write_text("\n".join(lines) + "\n", encoding="utf-8")
     print("\n".join(lines))
-    print("Saved: %s and %s" % (output.with_suffix(".txt"), output.with_suffix(".json")))
+    print("Saved: %s and %s" % (text_path, json_path))
     return 0
 
 
