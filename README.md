@@ -34,6 +34,19 @@ python3 benchmarks/tokenizer_audit.py --scale 1 --out benchmark-results/tokenize
 
 This does not call a provider API or generate model output. The counts are exact for the text passed to that local encoding, but they are **not provider-reported request counts or billed usage**: chat framing and provider-specific tool accounting can differ. The bundled corpus is synthetic, and this audit does not measure answer quality or prove semantic equivalence. CI runs this audit separately from the standard-library-only offline tests.
 
+### Latest measured local tokenizer audit
+
+GitHub Actions run [#40189573422](https://github.com/ytpokerspace/CSC--LCH-/actions/runs/40189573422) completed successfully on 2026-10-25. On the 17-question synthetic corpus (seed 7, scale 1), the local `o200k_base` audit reported these mean input-payload counts:
+
+| Condition | Mean tokens per question | Difference vs full context |
+|---|---:|---:|
+| Full context | 4,225.65 | Baseline |
+| Literal glyph layer + deferral | 4,086.65 | 3.29% fewer |
+| No glyph layer + deferral | 4,040.65 | 4.38% fewer |
+| Token-aware glyph layer + deferral | 4,086.65 | 3.29% fewer |
+
+These are measured tokenizer counts for the exact concatenated text payload used by this script, including the system instructions, context, question, and applicable registry/tool-schema overhead. They are **not provider-reported API usage**. The script represents hydration by including the tool schema; it does not simulate actual hydration calls or count any later retrieved content. The test is synthetic and does not measure answer correctness or semantic equivalence. In this run, the no-glyph variant had the lowest measured prompt-payload count; emoji substitution did not improve on that variant.
+
 ## Using your own context
 
 Prepare a UTF-8 plain-text file with context segments separated by blank lines. Optional tags `[T0]` through `[T5]` at the start of a segment let you specify tiers. Supply a separate JSON QA file if you want the optional quality test to score task-specific required/forbidden patterns.
