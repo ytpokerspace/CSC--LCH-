@@ -4,7 +4,7 @@ type: software
 title: "CSC-LCH: Cascading Semantic Compression + Lazy Context Hydration"
 authors:
   - family-names: Cox
-    given-names: William Ganel
+    given-names: William Gunnell
 version: "1.0"
 repository-code: "https://github.com/ytpokerspace/CSC--LCH-"
 license: MIT
