@@ -103,8 +103,8 @@ def unique_sentences(ss):
     return list(OrderedDict((re.sub(r"\s+", " ", s).casefold(), s) for s in ss).values())
 
 def ordinary_summary(ss):
-    # Fixed baseline: retain the first two sentences only.
-    return " ".join(ss[:2])
+    # Simple deterministic summary baseline: retain the first two unique sentences.
+    return " ".join(unique_sentences(ss)[:2])
 
 def csc_dedup(ss):
     # Deterministic baseline inspired by CSC LCH: remove exact repeated sentences.
