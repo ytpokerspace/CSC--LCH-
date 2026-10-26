@@ -8,7 +8,7 @@ Experimental prompt-only configuration package for testing structured semantic c
 
 ## Contents
 
-- `configs/`: six YAML specifications covering the dimensional analogy, human-safe behavior, semantic context, metrics, hardware boundaries, and experiment protocol.
+- `configs/`: six initial YAML specifications plus `07_prompt_native_efficiency_continuum.yaml`, the expanded 4D field-notes specification with human-value constraints and proposed hardware benchmark targets.
 - `validate_and_benchmark.py`: parses YAML, checks cross-file safety/measurement requirements, and runs five deterministic fixture tests.
 - `validation_report.json`: sample report from the synthetic harness.
 
@@ -28,6 +28,8 @@ Run the command from this directory. The script writes `validation_report.json`.
 A passing result means the YAML parsed and the synthetic test fixtures passed. It is **not** an LLM benchmark. Word counts are not tokenizer token counts; fixture timing is not model latency; no GPU, memory, or energy telemetry is collected.
 
 To evaluate actual efficiency, compare baseline and candidate prompts on identical held-out tasks with the same model/version/settings. Record tokenizer counts, latency, task correctness, and available hardware telemetry. Reject efficiency gains that breach preregistered quality or safety thresholds.
+
+Hardware thresholds in the field-notes YAML are hypotheses, not universal standards. Calibrate them against a named platform and workload before using them as acceptance criteria.
 
 ## Safety and limits
 
