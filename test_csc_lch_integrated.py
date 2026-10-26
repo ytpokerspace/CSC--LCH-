@@ -3,7 +3,7 @@ import unittest
 from csc_lch_integrated import audit, compress, hydrate
 
 
-class IntegratedCSC LCHTests(unittest.TestCase):
+class IntegratedCSCLCHTests(unittest.TestCase):
     def test_duplicate_sentence_is_deduplicated_but_source_is_preserved(self):
         source = "Mira approved version 2. Mira approved version 2. Mira rejected version 3."
         package = compress(source, query="approved version", budget=100)
