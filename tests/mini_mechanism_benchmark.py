@@ -120,9 +120,9 @@ def mechanism_compact(ss):
         re.I,
     )
     selected = [s for s in unique if markers.search(s)]
-    # Retain one neutral sentence if the heuristic selected none.
-    if not selected and unique:
-        selected = [unique[0]]
+    # Keep the first unique sentence as a minimal topic anchor, even if neutral.
+    if unique and unique[0] not in selected:
+        selected.insert(0, unique[0])
     return " ".join(selected)
 
 def answer_from_context(context, question):
