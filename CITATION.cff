@@ -1,0 +1,15 @@
+cff-version: 1.2.0
+message: "If you use or build on CSC-LCH, please cite this work."
+type: software
+title: "CSC-LCH: Cascading Semantic Compression + Lazy Context Hydration"
+authors:
+  - family-names: Cox
+    given-names: William Ganel
+version: "1.0"
+repository-code: "https://github.com/ytpokerspace/CSC--LCH-"
+license: MIT
+abstract: >-
+  A prompt/context-layer research framework that combines cascading semantic
+  compression with lazy context hydration to reduce redundant active context
+  while retaining access to deferred supporting information. Performance and
+  quality claims require reproducible measurement on representative workloads.
