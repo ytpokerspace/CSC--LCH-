@@ -1,0 +1,19 @@
+schema_version: "1.0.0"
+hardware:
+  optimization_scope: "indirect_prompt_effects"
+  direct_hardware_control: false
+  potentially_influenced: ["Input token volume", "Repeated inference work", "Output token volume", "Context processing requirements", "Number of model calls, if the surrounding application permits"]
+  not_directly_controlled: ["GPU clock frequency", "GPU kernel implementation", "VRAM bandwidth", "Physical memory capacity", "Model parameter count", "Quantization format", "Thermal management", "Power delivery", "Hardware scheduling"]
+  efficiency_policy:
+    optimize_useful_work_per_resource: true
+    require_measured_quality: true
+    distinguish_algorithmic_savings_from_hardware_savings: true
+    do_not_claim_energy_savings_without_measurements: true
+  deployment_constraints:
+    requires_model_support_for_prompt_instructions: true
+    requires_external_integration_for_automatic_retrieval: true
+    requires_runtime_for_actual_hardware_metrics: true
+    requires_runtime_for_automatic_benchmarking: true
+  decision_rule:
+    accept_optimization_only_if: ["Task correctness meets the preregistered threshold.", "Human safety constraints remain satisfied.", "Measured efficiency improves or a justified trade-off is documented.", "Results are reproducible."]
+    otherwise: "retain_baseline"
