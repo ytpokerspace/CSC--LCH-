@@ -10,7 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import asdict, dataclass
-from typing import Callable, Iterable
+from typing import Callable
 
 TokenCounter = Callable[[str], int]
 
@@ -100,23 +100,26 @@ def compress(
     ranked = sorted(units, key=lambda u: _score(u, qterms), reverse=True)
     selected: list[Unit] = []
     deferred: list[Unit] = []
-    used = 0
+    source_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
+
+    def render(items: list[Unit]) -> str:
+        ordered = sorted(items, key=lambda u: u.source_index)
+        return "\n".join(
+            f"[{u.unit_id}|{u.evidence_status}|src={u.source_index}] {u.text}"
+            for u in ordered
+        )
+
+    # Budget the encoded payload, including IDs and provenance metadata.
     for unit in ranked:
-        cost = counter(unit.text)
-        if used + cost <= budget:
+        candidate = selected + [unit]
+        if counter(render(candidate)) <= budget:
             selected.append(unit)
-            used += cost
         else:
             deferred.append(unit)
 
-    # Keep payload in original order for readability and deterministic behavior.
     selected.sort(key=lambda u: u.source_index)
     deferred.sort(key=lambda u: u.source_index)
-    source_hash = hashlib.sha256(source.encode("utf-8")).hexdigest()
-    payload = "\n".join(
-        f"[{u.unit_id}|{u.evidence_status}|src={u.source_index}] {u.text}"
-        for u in selected
-    )
+    payload = render(selected)
     return {
         "schema": "csc-lch-integrated-v0.1",
         "source_sha256": source_hash,
