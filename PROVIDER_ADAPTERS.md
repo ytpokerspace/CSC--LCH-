@@ -1,54 +1,50 @@
-# CSC-LCH provider adapters
+# Live provider adapters
 
-## What this adds
+This is the live-API layer for the provider-neutral interface.
 
-`csc_lch_providers.py` defines a small, vendor-neutral interface so CSC-LCH
-can eventually connect to different model APIs without putting provider-specific
-assumptions into its core logic. It has no third-party dependencies and makes
-no network requests.
+## Supported adapter types
 
-- `ProviderAdapter.generate(...)` is the normalized generation contract.
-- `ProviderAdapter.count_tokens(...)` returns a provider-accurate count when
-  implemented, otherwise `None`.
-- `ProviderResponse` normalizes text, provider/model identity, usage, and
-  optional metadata.
-- `TokenUsage.source` records where metrics came from.
-- `MockProvider` gives deterministic offline behavior for integration tests.
-- `estimate_tokens_by_characters` is only a rough estimate; it must not be
-  reported as a tokenizer/API measurement.
+- `AnthropicAdapter`: uses Anthropic Messages API and the provider's
+  `/v1/messages/count_tokens` endpoint.
+- `OpenAICompatibleAdapter`: uses the OpenAI Chat Completions API shape,
+  including services that implement that same shape. Generation input/output
+  usage is taken from the response's usage fields.
 
-## Run the tests
+Both use Python's standard library for HTTP and JSON; no SDK is required.
 
-With Python 3.8+:
+## Example
+
+```python
+from csc_lch_provider_clients import AnthropicAdapter, OpenAICompatibleAdapter
+
+anthropic = AnthropicAdapter()  # reads ANTHROPIC_API_KEY
+result = anthropic.generate("Answer briefly: what is CSC-LCH?", model="YOUR_MODEL_ID")
+print(result.text, result.usage)
+
+openai = OpenAICompatibleAdapter()  # reads OPENAI_API_KEY
+result = openai.generate("Answer briefly: what is CSC-LCH?", model="YOUR_MODEL_ID")
+print(result.text, result.usage)
+```
+
+For OpenAI-compatible services, set `OPENAI_BASE_URL` when the endpoint is not
+the OpenAI default. Use the model identifier accepted by that service.
+
+## Token accounting rules
+
+- Anthropic input counts come from the Anthropic count-tokens API.
+- OpenAI-compatible generation reports actual prompt and completion usage.
+- OpenAI-compatible APIs do not share a universal preflight counting endpoint.
+  If the optional `tiktoken` package is installed and recognizes the model,
+  `count_tokens` uses that local tokenizer and returns its count. Otherwise it
+  returns `None`, rather than inventing a count.
+- Actual usage values and local tokenizer counts are not interchangeable; record
+  the source with every result.
+
+## Tests
 
 ```sh
 python -m unittest discover -s tests -v
 ```
 
-No API key or internet connection is required.
-
-## Adding a real provider
-
-Create a subclass of `ProviderAdapter` for each provider. The implementation
-should:
-1. Read credentials from environment variables or a secret manager, never from
-   committed source code.
-2. Use that provider's documented endpoint and model identifiers.
-3. Preserve provider-reported usage separately from local estimates.
-4. Return a `ProviderResponse` with the actual provider and model names.
-5. Raise clear errors for authentication, rate limits, timeouts, and malformed
-   responses; do not silently fall back to mock results.
-6. Include tests using mocked HTTP responses, including error cases.
-
-## Scope and limitations
-
-This is the adapter contract and offline test foundation, not a completed live
-integration with OpenAI, Anthropic, or a local model runtime. The existing
-benchmark has not been rewired in this change. That is deliberate: provider
-selection, token accounting, pricing, and quality evaluation should be changed
-in a follow-up with provider-specific tests so existing benchmark behavior is
-not accidentally broken.
-
-A provider-neutral interface does not itself improve compression. Compression
-savings and output quality must be measured against the same inputs, model
-settings, and provider-reported metrics.
+Tests use fake responses and make no network calls. A passing unit test does not
+prove live credentials, model access, endpoint compatibility, pricing, or quality.
