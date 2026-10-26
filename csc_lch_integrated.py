@@ -157,6 +157,9 @@ def hydrate(package: dict, query: str, limit: int = 3) -> dict:
     """Recover deferred source spans relevant to a query, with exact provenance."""
     if limit < 0:
         raise ValueError("limit must be >= 0")
+    if limit == 0:
+        return {"status": "ok", "query": query, "results": [],
+                "note": "A zero result limit was requested."}
     archive = package.get("source_archive", {})
     expected_hash = package.get("source_sha256")
     source = archive.get("source_text", "")
