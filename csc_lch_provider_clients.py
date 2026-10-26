@@ -65,7 +65,6 @@ class AnthropicAdapter(ProviderAdapter):
     def count_tokens(self, text: str, *, model: str) -> Optional[int]:
         data = self.client.post("/v1/messages/count_tokens", {
             "model": model,
-            "max_tokens": 1,
             "messages": [{"role": "user", "content": text}],
         })
         count = data.get("input_tokens")
