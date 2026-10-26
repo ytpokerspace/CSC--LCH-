@@ -58,8 +58,8 @@ results = []
 for task in tasks:
     output = deterministic_candidate(task)
     results.append({"id":task["id"],"exact_match":output == task["expected"],
-        "input_word_count_proxy":len(re.findall(r"\\S+",task["input"])),
-        "output_word_count_proxy":len(re.findall(r"\\S+",output))})
+        "input_word_count_proxy":len(re.findall(r"\S+",task["input"])),
+        "output_word_count_proxy":len(re.findall(r"\S+",output))})
 elapsed_ms = (time.perf_counter() - start) * 1000
 checks["synthetic_fixture_exact_match_all"] = all(item["exact_match"] for item in results)
 report = {
