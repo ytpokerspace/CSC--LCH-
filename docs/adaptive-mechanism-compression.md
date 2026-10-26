@@ -2,7 +2,7 @@
 
 **Author:** William Ganel Cox  
 **Status:** Design proposal; not yet experimentally validated  
-**Scope:** LLM context compression, token efficiency, semantic preservation, and selective retrieval
+**Scope:** LLM context compression, token efficiency, semantic preservation, selective retrieval, and evidence-grounded latent representations
 
 ## 1. Purpose
 
@@ -22,6 +22,8 @@ This document describes a testable design, not a claim of novelty or demonstrate
 8. **Hydrate selectively:** retrieve exact source spans for unresolved, relevant details. Never fill a gap from guesswork when the source does not support an answer.
 9. **Validate:** check required facts, relations, quantities, ordering, negation, conditions, and citations against the source.
 10. **Measure and adapt:** record token costs, errors, retrieval frequency, and task outcomes. Change compression rules only based on reproducible evaluation results.
+11. **Extract principles:** after evidence has been validated, summarize recurring mechanisms or principles while retaining links to the supporting and contradicting evidence.
+12. **Map principles into latent representations:** embed evidence spans and extracted principles using a fixed, documented embedding model and version. Preserve the original text, provenance, and evidence status beside each vector.
 
 ## 3. Representation contract
 
@@ -51,26 +53,47 @@ For each proposed compression rule or representation, state a hypothesis and exp
 
 The system must be allowed to conclude that no tested method wins.
 
-## 7. Minimum benchmark
+## 7. Fair benchmark protocol
 
-Compare the original context, an ordinary summary, a structured semantic representation without hydration, and a structured semantic representation with lazy hydration. Use the same source passages and questions, with a fixed tokenizer and disclosed version. Count all attributable tokens, including instructions, schema, metadata, indexes, retrieval queries, retrieved spans, and repair attempts.
+Compare the original context, an ordinary summary, a structured semantic representation without hydration, and a structured semantic representation with lazy hydration. Use the same source passages, task questions, tokenizer, and accuracy criteria. Count all attributable tokens, including instructions, schema, metadata, indexes, retrieval queries, retrieved spans, and repair attempts.
+
+Pre-register the dataset split, token-counting method, allowed external knowledge, accuracy tolerance, resource budget, and primary metric before examining test results. Tune on a development set; keep a held-out test set untouched until final evaluation. Apply equivalent effort and access to source information across methods. Report raw scores and uncertainty, not only a weighted objective. Include failures and cases where no method meets the target. The ordinary-summary baseline must be allowed to win.
 
 Report total tokens and percentage change; held-out answer accuracy; entity and relation preservation; negation, quantity, time, and condition preservation; hydration rate and overhead; unsupported-claim rate; exact reconstruction success only for lossless mode; and failures or inconclusive cases.
 
 Do not tune on the evaluation questions and then claim independent evaluation. Start with a small hand-checkable test set.
 
-## 8. Initial falsifiable hypothesis
+## 8. Latent-space analysis of evidence and principles
+
+Latent space can help organize semantic relationships, but it does not provide a universal coordinate system. Coordinates depend on the chosen embedding model, model version, input formatting, and context. A vector location is not by itself proof that a principle is true or causally important.
+
+Use this sequence:
+
+1. **Define evidence units:** split source material into stable, citable spans and keep each span's source ID, timestamp or section when available, and OBS/INF/UNK label.
+2. **Extract candidate principles:** state each principle as a concise proposition with its mechanism, conditions, and predicted consequences. Link it to supporting, contradicting, and unresolved evidence. Do not merge contradictory principles merely because their vectors are close.
+3. **Embed consistently:** use the same embedding model and version, input template, and normalization policy for all evidence and principles in a comparison. Store model/version metadata with each vector.
+4. **Measure relationships:** use cosine similarity or another declared metric to retrieve candidate-neighbor evidence. Treat similarity as a search signal, not as a truth score. Check important links against the source and, where appropriate, against counterexamples.
+5. **Find gaps:** compare a proposed principle's predicted consequences with observed evidence. Mark missing observations as unknown; generate a testable hypothesis rather than filling the gap by assumption.
+6. **Evaluate structure:** assess retrieval precision/recall on labeled examples, whether contradictions remain visible, and whether nearby vectors actually share the relevant mechanism. Compare with simple lexical or keyword retrieval as a baseline.
+7. **Visualize carefully:** use PCA or UMAP only as a view of high-dimensional relationships. Distances and apparent clusters in a two-dimensional projection can distort the original geometry. Do not treat plotted axes as intrinsic semantic dimensions.
+8. **Update with evidence:** after a new experiment, update the principle's evidence links and confidence calibration. Re-embedding or changing models requires a versioned migration; coordinates from different embedding spaces must not be compared directly without a validated alignment method.
+
+The practical goal is not to claim an exact universal latent-space address for a principle. It is to build a reproducible, model-specific map of semantic proximity, evidence support, disagreement, and unanswered questions.
+
+## 9. Initial falsifiable hypotheses
 
 **H1:** On a defined set of LLM-context tasks, structured semantic compression with selective source hydration reduces total tokens relative to an ordinary summary while keeping held-out task accuracy within a predeclared tolerance.
 
-Possible disconfirming outcomes: metadata overhead erases savings; hydration retrieves too much; parsing loses distinctions; accuracy falls; or ordinary summaries perform equally well at lower cost. Set the accuracy tolerance, dataset, tokenizer, and budget before running comparisons.
+**H2:** Evidence-linked principle embeddings improve retrieval of relevant supporting and contradicting evidence over a declared baseline, without increasing unsupported claims.
 
-## 9. Safety and correctness invariants
+Possible disconfirming outcomes: metadata overhead erases savings; hydration retrieves too much; parsing loses distinctions; accuracy falls; embeddings fail to retrieve counterevidence; or simple keyword search performs equally well at lower cost. Set tolerances, dataset, model versions, metrics, and budget before evaluation.
+
+## 10. Safety and correctness invariants
 
 Never convert an inference into an observation. Preserve negation, uncertainty, units, time, conditions, and provenance. Do not treat missing information as false or as evidence for a preferred hypothesis. Do not silently answer from external knowledge when source-grounded answers are required. Hydration must use an authorized source and must not use the expected answer as an oracle. Keep a fallback to the original source when the compressed form fails validation. Report measurements separately from estimates and design expectations.
 
-## 10. Initial implementation boundary
+## 11. Initial implementation boundary
 
-The first prototype should be deliberately small: deterministic fact records, source-span references, a simple budget-aware encoder, a query-to-fact coverage check, and a local benchmark. Avoid model calls, external APIs, speculative prefetch, or complex probability tuning until the baseline demonstrates a measurable benefit.
+The first prototype should be deliberately small: deterministic fact records, source-span references, a simple budget-aware encoder, a query-to-fact coverage check, and a local benchmark. Add evidence-linked principle extraction and embeddings as a separate measured stage only after the basic compression benchmark is reproducible. Avoid paid API calls, speculative prefetch, and complex probability tuning until the baseline demonstrates a measurable benefit.
 
 **Current evidence status:** architecture proposal only. No performance result is claimed by this document.
