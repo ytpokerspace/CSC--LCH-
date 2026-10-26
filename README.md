@@ -1,7 +1,7 @@
 # CSC-LCH
 ## Cascading Semantic Compression + Lazy Context Hydration
 
-**Creator and author: William Ganel Cox**  
+**Creator and author: William Gunnell Cox**  
 **Project:** CSC-LCH — original cascading semantic compression and lazy context hydration framework  
 **Status:** Public research prototype; benchmark claims must be independently reproduced.
 
@@ -79,7 +79,7 @@ Treat performance numbers as established only when the corresponding experiment 
 
 ## Attribution
 
-CSC-LCH and the original framework concept documented here are attributed to **William Ganel Cox**. If you build on this work, retain this attribution and cite this repository. Attribution does not imply that every subsequent contribution, implementation, or independent idea belongs to the original author.
+CSC-LCH and the original framework concept documented here are attributed to **William Gunnell Cox**. If you build on this work, retain this attribution and cite this repository. Attribution does not imply that every subsequent contribution, implementation, or independent idea belongs to the original author.
 
 ## License
 
