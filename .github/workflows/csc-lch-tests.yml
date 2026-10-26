@@ -1,0 +1,35 @@
+name: CSC-LCH Python checks
+
+on:
+  push:
+    branches:
+      - main
+      - "feat/provider-agnostic-adapters"
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile Python modules
+        run: |
+          python -m py_compile csc_lch_bench.py csc_lch_providers.py csc_lch_provider_clients.py csc_lch_cross_provider_bench.py
+      - name: Run offline unit tests
+        run: python -m unittest discover -s tests -v
+      - name: Smoke-test mock benchmark
+        run: |
+          printf '%s\n' 'Project: CSC-LCH' 'Goal: preserve exact meaning and source text.' 'Constraint: never change 0.5 kg into 5 kg.' 'Negation: do not remove this requirement.' > /tmp/csc_lch_context.txt
+          python csc_lch_cross_provider_bench.py --context /tmp/csc_lch_context.txt --question "What constraint must be preserved?" --out /tmp/csc_lch_report.json
+          python -c "import json; r=json.load(open('/tmp/csc_lch_report.json', encoding='utf-8')); assert set(r['results']) == {'original', 'compressed'}; assert r['compression']['note'] == 'Character reduction is not token reduction.'; print('Mock benchmark report schema OK')"
