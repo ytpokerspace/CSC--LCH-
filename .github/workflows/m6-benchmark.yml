@@ -1,0 +1,35 @@
+name: CSC LCH Milestone 6 Benchmark
+
+on:
+  push:
+    branches: ["main", "feat/**"]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  offline-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Run unit tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Run synthetic benchmark fixture
+        run: |
+          python scripts/m6_benchmark.py tests/fixtures/m6_sample.jsonl \
+            --json-out artifacts/m6_summary.json \
+            --csv-out artifacts/m6_summary.csv
+      - name: Upload synthetic benchmark report
+        uses: actions/upload-artifact@v4
+        with:
+          name: csc-lch-m6-synthetic-report
+          path: |
+            artifacts/m6_summary.json
+            artifacts/m6_summary.csv
