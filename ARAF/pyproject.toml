@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "Offline, evidence-first research planning and validation"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT OR Apache-2.0" }
+license = { text = "MIT" }
 
 [tool.setuptools]
 package-dir = {"" = "src"}
