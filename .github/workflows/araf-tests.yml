@@ -1,0 +1,30 @@
+name: ARAF tests
+
+on:
+  push:
+    paths:
+      - 'ARAF/**'
+      - '.github/workflows/araf-tests.yml'
+  pull_request:
+    paths:
+      - 'ARAF/**'
+      - '.github/workflows/araf-tests.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Run offline unit tests
+        run: PYTHONPATH=ARAF/src python -m unittest discover -s ARAF/tests -v
+      - name: Validate sample research plan
+        run: PYTHONPATH=ARAF/src python -m araf.cli ARAF/examples/llm_context_efficiency.json
