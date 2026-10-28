@@ -45,7 +45,7 @@ Do not silently promote inference or speculation to observed fact. Preserve sour
 - [`csc_lch_bench.py`](csc_lch_bench.py) — benchmark harness for token counting, compression stages, projections, and optional quality checks.
 - [`csc_lch_bench.yaml`](csc_lch_bench.yaml) — YAML-packaged benchmark source.
 - [`benchmarks/milestone6_report.md`](benchmarks/milestone6_report.md) — reported T3/T4/T5 ablation results and the Milestone 6.1 total-cost validation protocol (reported aggregates are not independently reproduced yet).
-- [`LICENSE`](LICENSE) — MIT License.
+- [`LICENSE`](LICENSE) — GNU GPL v3.0 or later (GPL-3.0-or-later).
 
 ## Reproduce carefully
 
@@ -84,4 +84,4 @@ CSC-LCH and the original framework concept documented here are attributed to **W
 
 ## License
 
-This repository is released under the MIT License. See [LICENSE](LICENSE).
+This repository is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later). See [LICENSE](LICENSE).
