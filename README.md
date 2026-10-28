@@ -85,3 +85,18 @@ CSC-LCH and the original framework concept documented here are attributed to **W
 ## License
 
 This repository is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later). See [LICENSE](LICENSE).
+
+
+## Project at a glance
+
+**What it is:** An experimental context-management framework for LLM workflows that combines tiered semantic summaries with on-demand retrieval of supporting source material.
+
+**Why it matters:** Long prompts can repeat information or include details that are not needed for the current task. CSC-LCH explores whether organizing context by importance and retrieving details only when needed can reduce prompt overhead without losing task-critical meaning.
+
+**What is included:** A documented tier model, evidence labels, source-preservation principles, and a research framework for evaluating context handling.
+
+**How to evaluate it:** Start with the design and implementation documents in this repository. For any performance claim, inspect the benchmark method and raw results, then reproduce the test with a stated tokenizer, model/workload, and baseline. This README does not claim a verified universal token or cost reduction.
+
+**Current status:** Research framework/prototype. Treat unmeasured outcomes as hypotheses, not established results.
+
+**Contribution and license:** The original framework is attributed in this repository to William Gunnell Cox. Contributions and third-party material should retain their own attribution and license obligations. Licensed under GPL-3.0-or-later; see [LICENSE](LICENSE).
