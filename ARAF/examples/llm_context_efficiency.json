@@ -1,0 +1,86 @@
+{
+  "title": "LLM context compression efficiency pilot",
+  "domain": "LLM context compression and token efficiency",
+  "problem_statement": "Determine whether a context-compression method reduces input-token count while preserving task performance.",
+  "objective": "Compare compressed and uncompressed context conditions on the same fixed task set.",
+  "success_criteria": [
+    "Median input-token count decreases relative to the uncompressed baseline.",
+    "Task accuracy remains within a predeclared tolerance of the baseline."
+  ],
+  "hypotheses": [
+    {
+      "statement": "The compression method reduces input-token usage.",
+      "prediction": "The compressed condition has a lower median input-token count on the fixed task set.",
+      "independent_variables": [
+        "compression condition"
+      ],
+      "dependent_variables": [
+        "input token count",
+        "task accuracy",
+        "latency"
+      ],
+      "rejection_criterion": "Reject this hypothesis if median input-token count does not decrease."
+    },
+    {
+      "statement": "Compression quality depends on task type.",
+      "prediction": "Performance differences vary between retrieval-heavy and reasoning-heavy tasks.",
+      "independent_variables": [
+        "compression condition",
+        "task category"
+      ],
+      "dependent_variables": [
+        "task accuracy"
+      ],
+      "rejection_criterion": "Reject if the predeclared task-category comparison shows no meaningful difference."
+    }
+  ],
+  "experiment": {
+    "baseline": "Original uncompressed context",
+    "controls": [
+      "Use the same task instances in both conditions.",
+      "Hold model version and generation settings constant.",
+      "Predeclare scoring rules before comparing outputs."
+    ],
+    "dataset": "A documented synthetic task set for the first offline harness; later studies must document real dataset and licensing.",
+    "method": "Validate the plan first. In a later experiment, run baseline and compression conditions, store raw outputs, and compute paired metrics.",
+    "metrics": [
+      "input token count",
+      "task accuracy",
+      "latency",
+      "failure rate"
+    ],
+    "reproducibility_notes": [
+      "Record code revision and configuration.",
+      "Record dataset version and task identifiers.",
+      "Record model version, tokenizer, and generation settings when applicable.",
+      "Keep raw outputs and analysis scripts with the experiment record."
+    ]
+  },
+  "risks": [
+    "Compression may remove details required for a correct answer.",
+    "Synthetic tasks may not represent real workloads.",
+    "Token savings do not necessarily imply lower wall-clock latency or cost.",
+    "Results may vary by tokenizer, model, and prompt distribution."
+  ],
+  "constraints": {
+    "budget": "$0; no paid API calls",
+    "compute": "Local CPU for plan validation and tests",
+    "timeline": "Initial prototype"
+  },
+  "claims": [
+    {
+      "claim": "The proposed method will reduce input-token usage.",
+      "status": "hypothesized"
+    },
+    {
+      "claim": "The prototype validates research-plan structure only.",
+      "status": "unverified"
+    }
+  ],
+  "scores": {
+    "feasibility": 8,
+    "novelty": 3,
+    "potential_impact": 6,
+    "cost_accessibility": 9
+  }
+}
