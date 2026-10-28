@@ -91,7 +91,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         active = sum(r["active_prompt_tokens"] for r in items)
         # Compare aggregate active tokens with a per-question baseline.
         baseline_total = baseline * len(items)
-        total = sum(r["total_tokens"] for r in items)
+        total = sum(sum(r[k] for k in ("active_prompt_tokens", "hydration_prompt_tokens", "retrieved_tokens", "output_tokens")) for r in items)
         latencies = [float(r["latency_ms"]) for r in items]
         expected = sum(r["material_facts_expected"] for r in items)
         recovered = sum(r["material_facts_recovered"] for r in items)
