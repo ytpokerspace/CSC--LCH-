@@ -64,6 +64,19 @@ class ValidatePayloadTests(unittest.TestCase):
         self.assertFalse(result["valid"])
         self.assertIsInstance(result["errors"], list)
 
+    def test_unknown_evidence_status_is_rejected(self):
+        data = {**VALID_PLAN, "claims": [{"claim": "Unsupported claim", "status": "probably_true"}]}
+        result = validate_payload(data)
+        self.assertFalse(result["valid"])
+        self.assertTrue(any("claims[1].status" in error for error in result["errors"]))
+
+    def test_hypothesis_without_dependent_variable_is_rejected(self):
+        hypothesis = {**VALID_PLAN["hypotheses"][0], "dependent_variables": []}
+        data = {**VALID_PLAN, "hypotheses": [hypothesis]}
+        result = validate_payload(data)
+        self.assertFalse(result["valid"])
+        self.assertTrue(any("dependent_variables must not be empty" in error for error in result["errors"]))
+
 
 if __name__ == "__main__":
     unittest.main()
