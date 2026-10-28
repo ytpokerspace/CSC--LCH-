@@ -44,6 +44,7 @@ Do not silently promote inference or speculation to observed fact. Preserve sour
 - [`csc_lch_chatbot_instructions.yaml`](csc_lch_chatbot_instructions.yaml) — YAML prompt-layer specification.
 - [`csc_lch_bench.py`](csc_lch_bench.py) — benchmark harness for token counting, compression stages, projections, and optional quality checks.
 - [`csc_lch_bench.yaml`](csc_lch_bench.yaml) — YAML-packaged benchmark source.
+- [`benchmarks/milestone6_report.md`](benchmarks/milestone6_report.md) — reported T3/T4/T5 ablation results and the Milestone 6.1 total-cost validation protocol (reported aggregates are not independently reproduced yet).
 - [`LICENSE`](LICENSE) — MIT License.
 
 ## Reproduce carefully
