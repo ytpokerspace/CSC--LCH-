@@ -22,8 +22,8 @@ The first prototype focuses on structured research planning and validation. It d
 Requires Python 3.10 or newer.
 
 ```bash
-python -m unittest discover -s tests -v
-python -m araf.cli examples/llm_context_efficiency.json
+PYTHONPATH=ARAF/src python -m unittest discover -s ARAF/tests -v
+PYTHONPATH=ARAF/src python -m araf.cli ARAF/examples/llm_context_efficiency.json
 ```
 
 No API key, paid service, or network access is required for these checks.
@@ -58,7 +58,7 @@ Do not label a proposed outcome as measured. Record the dataset, version, proced
 
 ## License
 
-This project is offered under either the MIT License or Apache License 2.0. See `LICENSE-MIT` and `LICENSE-APACHE`.
+This prototype is currently licensed under the MIT License; see `LICENSE-MIT`.
 
 ## Roadmap
 
