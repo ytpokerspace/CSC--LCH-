@@ -1,5 +1,7 @@
 # ARAF — AI Research Acceleration Framework
 
+[![ARAF tests](https://github.com/ytpokerspace/CSC--LCH-/actions/workflows/araf-tests.yml/badge.svg)](https://github.com/ytpokerspace/CSC--LCH-/actions/workflows/araf-tests.yml)
+
 ARAF is an experimental, evidence-first workflow for turning research ideas into falsifiable hypotheses, testable study plans, risk reviews, and structured reports.
 
 > **Status:** Prototype / research preview. ARAF does not autonomously establish novelty or guarantee scientific validity. Its scores are heuristic and must be justified.
