@@ -68,6 +68,8 @@ def summarize(rows):
     question_sets = {}
     for row in rows:
         question_sets.setdefault(row["policy"], set()).add(row["question_id"])
+    if len(question_sets) < 2:
+        raise ValueError("paired benchmark requires at least two policies")
     if len(question_sets) > 1:
         reference_policy = sorted(question_sets)[0]
         reference_questions = question_sets[reference_policy]
