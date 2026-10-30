@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Offline CSC LCH Milestone 6.1 benchmark aggregator (standard library only).
 
-Input is JSON Lines: one observation per policy/question/run. See
+Input is JSON Lines: one observation per policy/question. Repeated runs are not supported. See
 benchmarks/milestone6_report.md for the schema and accounting caveats.
 No network or paid API calls are made.
 """
@@ -111,13 +111,9 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         grouped[row["policy"]].append(row)
     policies: dict[str, Any] = {}
     for policy, items in sorted(grouped.items()):
-        baseline_values = {r["baseline_prompt_tokens"] for r in items}
-        if len(baseline_values) != 1:
-            raise ValueError(f"{policy}: baseline_prompt_tokens differs across observations")
-        baseline = next(iter(baseline_values))
         active = sum(r["active_prompt_tokens"] for r in items)
-        # Compare aggregate active tokens with a per-question baseline.
-        baseline_total = baseline * len(items)
+        # Compare active prompt tokens with the corresponding per-question baseline.
+        baseline_total = sum(r["baseline_prompt_tokens"] for r in items)
         total = sum(sum(r[k] for k in ("active_prompt_tokens", "hydration_prompt_tokens", "retrieved_tokens", "output_tokens")) for r in items)
         latencies = [float(r["latency_ms"]) for r in items]
         expected = sum(r["material_facts_expected"] for r in items)
@@ -158,7 +154,7 @@ def write_outputs(summary: dict[str, Any], json_path: Path, csv_path: Path) -> N
         "active_tokens_saved", "active_reduction_pct", "active_compression_ratio",
         "hydration_calls_total", "hydration_prompt_tokens_total", "retrieved_tokens_total",
         "output_tokens_total", "total_tokens_including_recorded_retrieval_and_output",
-        "total_tokens_saved_vs_baseline_prompt_only", "mean_quality_score",
+        "mean_quality_score",
         "material_facts_expected", "material_facts_recovered", "material_fact_recall",
         "reconstruction_failures", "mean_latency_ms", "median_latency_ms", "p95_latency_ms_nearest_rank",
     ]
