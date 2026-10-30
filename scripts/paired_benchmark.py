@@ -44,6 +44,26 @@ def load_rows(path):
         rows.append(r)
     if not rows:
         raise ValueError("input contains no observations")
+    question_sets = {}
+    for row in rows:
+        question_sets.setdefault(row["policy"], set()).add(row["question_id"])
+    if len(question_sets) > 1:
+        reference_policy = sorted(question_sets)[0]
+        reference_questions = question_sets[reference_policy]
+        mismatches = {
+            policy: sorted(reference_questions ^ question_ids)
+            for policy, question_ids in sorted(question_sets.items())
+            if question_ids != reference_questions
+        }
+        if mismatches:
+            details = "; ".join(
+                f"{policy}: differing question_ids={ids}"
+                for policy, ids in mismatches.items()
+            )
+            raise ValueError(
+                "paired benchmark requires identical question_id sets across "
+                f"policies (reference={reference_policy}): {details}"
+            )
     seen = set()
     for r in rows:
         key = (r["question_id"], r["policy"])
