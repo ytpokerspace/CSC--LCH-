@@ -65,6 +65,12 @@ def load_rows(path):
 def summarize(rows):
     if not rows:
         raise ValueError("input contains no observations")
+    baseline_by_question = {}
+    for row in rows:
+        signature = tuple(row[k] for k in (*BASE, "baseline_latency_ms", "baseline_quality_score", "baseline_reconstruction_ok", "baseline_material_facts_expected", "baseline_material_facts_recovered"))
+        previous = baseline_by_question.setdefault(row["question_id"], signature)
+        if previous != signature:
+            raise ValueError(f"question_id={row['question_id']!r}: baseline measurements must be identical across policies")
     question_sets = {}
     for row in rows:
         question_sets.setdefault(row["policy"], set()).add(row["question_id"])
