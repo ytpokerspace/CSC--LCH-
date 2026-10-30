@@ -36,5 +36,23 @@ class PairedBenchmarkTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "duplicate observation"):
                 load_rows(p)
 
+    def test_baseline_must_match_across_policies(self):
+        rows = load_rows(FIXTURE)
+        rows[1]["baseline_prompt_tokens"] += 1
+        with self.assertRaisesRegex(ValueError, "baseline measurements must be identical"):
+            summarize(rows)
+
+    def test_mixed_provenance_is_reported_as_mixed(self):
+        rows = load_rows(FIXTURE)
+        rows[0]["data_status"] = "user_supplied_observations"
+        self.assertEqual(summarize(rows)["data_status"], "mixed_data_sources")
+
+    def test_non_object_json_is_rejected_clearly(self):
+        with tempfile.TemporaryDirectory() as td:
+            p = Path(td) / "invalid-shape.jsonl"
+            p.write_text("[]\\n", encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "JSON object"):
+                load_rows(p)
+
 if __name__ == "__main__":
     unittest.main()
