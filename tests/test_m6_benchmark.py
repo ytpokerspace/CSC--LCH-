@@ -28,7 +28,7 @@ def observation(policy="T4", question_id="q1", **overrides):
 
 class Milestone6BenchmarkTests(unittest.TestCase):
     def test_total_tokens_and_active_savings(self):
-        result = summarize([observation()])["policies"]["T4"]
+        result = summarize([observation("T3"), observation("T4")])["policies"]["T4"]
         self.assertEqual(result["active_tokens_saved"], 30)
         self.assertEqual(result["total_tokens_including_recorded_retrieval_and_output"], 93)
         self.assertNotIn("total_tokens_saved_vs_baseline_prompt_only", result)
