@@ -39,6 +39,8 @@ def load_rows(path: Path) -> list[dict[str, Any]]:
             row = json.loads(line)
         except json.JSONDecodeError as exc:
             raise ValueError(f"{path}:{line_no}: invalid JSON: {exc}") from exc
+        if not isinstance(row, dict):
+            raise ValueError(f"{path}:{line_no}: each observation must be a JSON object")
         missing = REQUIRED - row.keys()
         if missing:
             raise ValueError(f"{path}:{line_no}: missing fields: {', '.join(sorted(missing))}")
