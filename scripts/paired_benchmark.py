@@ -17,6 +17,8 @@ def load_rows(path):
             r = json.loads(line)
         except json.JSONDecodeError as exc:
             raise ValueError(f"line {line_no}: invalid JSON: {exc}") from exc
+        if not isinstance(r, dict):
+            raise ValueError(f"line {line_no}: each observation must be a JSON object")
         missing = REQUIRED - r.keys()
         if missing:
             raise ValueError(f"line {line_no}: missing fields: {', '.join(sorted(missing))}")
@@ -39,12 +41,20 @@ def load_rows(path):
         for expected, recovered in (("baseline_material_facts_expected", "baseline_material_facts_recovered"), ("material_facts_expected", "material_facts_recovered")):
             if r[recovered] > r[expected]:
                 raise ValueError(f"line {line_no}: recovered facts cannot exceed expected")
+        if r["material_facts_expected"] != r["baseline_material_facts_expected"]:
+            raise ValueError(f"line {line_no}: expected material-fact count must match baseline for the same task")
         r["baseline_total_tokens"] = sum(r[k] for k in BASE)
         r["policy_total_tokens"] = sum(r[k] for k in POLICY)
         rows.append(r)
     if not rows:
         raise ValueError("input contains no observations")
     seen = set()
+    baseline_by_question = {}
+    for r in rows:
+        signature = tuple(r[k] for k in (*BASE, "baseline_latency_ms", "baseline_quality_score", "baseline_reconstruction_ok", "baseline_material_facts_expected", "baseline_material_facts_recovered"))
+        previous = baseline_by_question.setdefault(r["question_id"], signature)
+        if previous != signature:
+            raise ValueError(f"question_id={r['question_id']!r}: baseline measurements must be identical across policies")
     for r in rows:
         key = (r["question_id"], r["policy"])
         if key in seen:
@@ -99,7 +109,12 @@ def summarize(rows):
             "baseline_reconstruction_failures": sum(not r["baseline_reconstruction_ok"] for r in items),
             "policy_reconstruction_failures": sum(not r["reconstruction_ok"] for r in items),
         }
-    status = "synthetic_fixture" if all(r.get("data_status") == "synthetic_fixture" for r in rows) else "user_supplied_observations"
+    statuses = {r.get("data_status", "user_supplied_observations") for r in rows}
+    allowed_statuses = {"synthetic_fixture", "user_supplied_observations"}
+    unknown_statuses = statuses - allowed_statuses
+    if unknown_statuses:
+        raise ValueError(f"unsupported data_status values: {sorted(unknown_statuses)}")
+    status = next(iter(statuses)) if len(statuses) == 1 else "mixed_data_sources"
     return {"schema_version": 1, "data_status": status,
             "accounting_note": "Paired comparison. Both totals include prompt/input + hydration prompt + retrieved context + output. Categories must be mutually exclusive and use the same tokenizer and output requirements.",
             "policies": result}
