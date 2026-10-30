@@ -31,14 +31,26 @@ class Milestone6BenchmarkTests(unittest.TestCase):
         result = summarize([observation()])["policies"]["T4"]
         self.assertEqual(result["active_tokens_saved"], 30)
         self.assertEqual(result["total_tokens_including_recorded_retrieval_and_output"], 93)
-        self.assertEqual(result["total_tokens_saved_vs_baseline_prompt_only"], 7)
+        self.assertNotIn("total_tokens_saved_vs_baseline_prompt_only", result)
         self.assertEqual(result["material_fact_recall"], 1.0)
 
-    def test_groups_policies_independently(self):
+    def test_groups_policies_after_validating_same_tasks(self):
         rows = [observation("T3", "q1"), observation("T4", "q1", active_prompt_tokens=80)]
         result = summarize(rows)["policies"]
         self.assertEqual(result["T3"]["active_prompt_tokens_total"], 70)
         self.assertEqual(result["T4"]["active_prompt_tokens_total"], 80)
+
+    def test_rejects_mismatched_question_sets(self):
+        with self.assertRaisesRegex(ValueError, "identical question_id sets"):
+            summarize([observation("T3", "q1"), observation("T4", "q2")])
+
+    def test_rejects_baseline_mismatch_for_same_question(self):
+        with self.assertRaisesRegex(ValueError, "baseline prompt tokens"):
+            summarize([observation("T3", "q1"), observation("T4", "q1", baseline_prompt_tokens=101)])
+
+    def test_rejects_duplicate_policy_question_observation(self):
+        with self.assertRaisesRegex(ValueError, "duplicate observation"):
+            summarize([observation("T3", "q1"), observation("T3", "q1"), observation("T4", "q1")])
 
     def test_rejects_missing_field(self):
         with tempfile.TemporaryDirectory() as temp:
