@@ -70,6 +70,30 @@ def load_rows(path: Path) -> list[dict[str, Any]]:
     return rows
 
 
+def _validate_paired_rows(rows: list[dict[str, Any]]) -> None:
+    grouped: dict[str, set[str]] = defaultdict(set)
+    seen: set[tuple[str, str]] = set()
+    baselines: dict[str, tuple[int, int]] = {}
+    for row in rows:
+        key = (row["question_id"], row["policy"])
+        if key in seen:
+            raise ValueError(f"duplicate observation for question_id={key[0]!r}, policy={key[1]!r}; repeated runs are not supported by this schema")
+        seen.add(key)
+        grouped[row["policy"]].add(row["question_id"])
+        baseline = (row["baseline_prompt_tokens"], row["material_facts_expected"])
+        previous = baselines.setdefault(row["question_id"], baseline)
+        if previous != baseline:
+            raise ValueError(f"{row['question_id']}: baseline prompt tokens and expected fact count must match across policies")
+    if len(grouped) < 2:
+        raise ValueError("paired comparison requires at least two policies")
+    reference_policy = sorted(grouped)[0]
+    reference_ids = grouped[reference_policy]
+    for policy, question_ids in sorted(grouped.items()):
+        if question_ids != reference_ids:
+            missing = sorted(reference_ids - question_ids)
+            extra = sorted(question_ids - reference_ids)
+            raise ValueError(f"paired comparison requires identical question_id sets; {policy}: missing={missing}, extra={extra}")
+
 def percentile(values: list[float], p: float) -> float | None:
     """Nearest-rank percentile; returns None for an empty collection."""
     if not values:
@@ -79,6 +103,7 @@ def percentile(values: list[float], p: float) -> float | None:
 
 
 def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
+    _validate_paired_rows(rows)
     grouped: dict[str, list[dict[str, Any]]] = defaultdict(list)
     for row in rows:
         grouped[row["policy"]].append(row)
@@ -107,7 +132,6 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
             "retrieved_tokens_total": sum(r["retrieved_tokens"] for r in items),
             "output_tokens_total": sum(r["output_tokens"] for r in items),
             "total_tokens_including_recorded_retrieval_and_output": total,
-            "total_tokens_saved_vs_baseline_prompt_only": baseline_total - total,
             "mean_quality_score": round(statistics.mean(r["quality_score"] for r in items), 6),
             "material_facts_expected": expected,
             "material_facts_recovered": recovered,
@@ -119,7 +143,7 @@ def summarize(rows: list[dict[str, Any]]) -> dict[str, Any]:
         }
     return {
         "schema_version": 1,
-        "accounting_note": "total_tokens sums active prompt + hydration prompt + retrieved + output fields; ensure fields are mutually exclusive for your instrumentation.",
+        "accounting_note": "Active-prompt reduction compares active_prompt_tokens with baseline_prompt_tokens only. Total policy tokens include active prompt + hydration prompt + retrieved + output. This schema has no baseline hydration/retrieval/output fields, so it does not calculate net total-token savings. Categories must be mutually exclusive.",
         "policies": policies,
     }
 
