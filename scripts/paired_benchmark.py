@@ -44,6 +44,17 @@ def load_rows(path):
         rows.append(r)
     if not rows:
         raise ValueError("input contains no observations")
+    seen = set()
+    for r in rows:
+        key = (r["question_id"], r["policy"])
+        if key in seen:
+            raise ValueError(f"duplicate observation for question_id={key[0]!r}, policy={key[1]!r}")
+        seen.add(key)
+    return rows
+
+def summarize(rows):
+    if not rows:
+        raise ValueError("input contains no observations")
     question_sets = {}
     for row in rows:
         question_sets.setdefault(row["policy"], set()).add(row["question_id"])
@@ -64,15 +75,6 @@ def load_rows(path):
                 "paired benchmark requires identical question_id sets across "
                 f"policies (reference={reference_policy}): {details}"
             )
-    seen = set()
-    for r in rows:
-        key = (r["question_id"], r["policy"])
-        if key in seen:
-            raise ValueError(f"duplicate observation for question_id={key[0]!r}, policy={key[1]!r}")
-        seen.add(key)
-    return rows
-
-def summarize(rows):
     grouped = {}
     for r in rows:
         grouped.setdefault(r["policy"], []).append(r)
