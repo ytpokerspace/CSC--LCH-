@@ -20,6 +20,14 @@ class PairedBenchmarkTests(unittest.TestCase):
         self.assertEqual(r["policy_total_tokens"], sum(r[k] for k in (
             "active_prompt_tokens", "hydration_prompt_tokens", "retrieved_tokens", "output_tokens")))
 
+    def test_mismatched_policy_question_sets_rejected(self):
+        rows = load_rows(FIXTURE)
+        policy = rows[-1]["policy"]
+        question_id = rows[-1]["question_id"]
+        rows = [r for r in rows if not (r["policy"] == policy and r["question_id"] == question_id)]
+        with self.assertRaisesRegex(ValueError, "identical question_id sets"):
+            summarize(rows)
+
     def test_duplicate_pair_rejected(self):
         row = load_rows(FIXTURE)[0]
         with tempfile.TemporaryDirectory() as td:
