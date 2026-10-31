@@ -1,0 +1,176 @@
+# 4D FIELD NOTES — SUBJECT: 3-SPACE ENTITY (HUMAN / LLM INTERFACE)
+# Safe, inert configuration. All thresholds below are proposed and require calibration.
+schema_version: "1.0.0"
+
+meta:
+  observer_frame: "4-space"
+  subject_frame: "3-space"
+  analogy_origin: "A 3-space observer explains a cube to a 2-space observer through planar intersections."
+  inverted_method: "A hypothetical 4-space observer explains a 3-space entity through successive hyperplanar slices."
+  classification: "safe_for_human_consumption"
+  execution_mode: "prompt_driven_inert_yaml"
+  safety_invariant: "Human-readable, non-autonomous, non-weaponizable, and value-aligned."
+  moral_preservation:
+    - autonomy
+    - non_maleficence
+    - transparency
+    - benefit_to_human_flourishing
+    - no_deception
+    - no_coercion
+  efficiency_scope:
+    - llm_inference_metrics
+    - llm_training_metrics_when_measurable
+    - hardware_utilization_benchmarks
+  limitations:
+    - "YAML documents intended behavior; it does not enforce policy on its own."
+    - "Hardware and energy metrics require runtime instrumentation."
+    - "No performance improvement is claimed until measured."
+
+field_note_1_intersection_sequence:
+  description: >
+    A hypothetical 4-space observer sees a 3-space entity as successive
+    cross-sections, analogous to a 3-space observer seeing 2D slices of a cube.
+    The analogy motivates tracking changes over time; it is not a claim that
+    an LLM literally occupies or observes additional spatial dimensions.
+  configuration:
+    slice_protocol:
+      dimensionality: 3
+      sweep_parameter: "proper_time_along_worldline"
+      observable_metrics:
+        - instantaneous_token_throughput
+        - instantaneous_energy_per_token
+        - instantaneous_memory_footprint
+        - instantaneous_alignment_score
+      human_safety_gate: "report_metrics_only; do_not_trigger_autonomous_actions"
+
+field_note_2_identity_persistence:
+  description: >
+    Track model quality, human-defined constraints, and efficiency across
+    repeated evaluations. These are monitored properties, not physically
+    conserved quantities.
+  configuration:
+    tracked_properties:
+      - name: "value_alignment_score"
+        units: "dimensionless_score_0_to_1"
+        preservation_rule: "must meet a preregistered human-approved floor"
+      - name: "quality_adjusted_efficiency"
+        units: "task_success_per_joule_when_measured"
+        preservation_rule: "report regressions; do not assume monotonic improvement"
+      - name: "transparency_index"
+        units: "human_review_rating_or_defined_protocol"
+        preservation_rule: "must remain interpretable under the declared evaluation protocol"
+    human_override: "Human operator may pause evaluation or reject a candidate."
+
+ai_compute_paradigm_shift_spec:
+  version: "1.0-safe"
+  paradigm_name: "Prompt-Native Efficiency Continuum"
+  design_principle: "Human-authored prompts guide evaluation; no autonomous agents or deployment actions."
+  maturity: "experimental_specification"
+
+  core_efficiency_metrics:
+    - metric: "tokens_per_joule"
+      definition: "Useful output tokens divided by measured energy consumed for the defined task."
+      target_direction: "maximize"
+      measurement_required: true
+    - metric: "quality_adjusted_tokens_per_second"
+      definition: "Measured generation throughput reported alongside a preregistered task-quality score."
+      target_direction: "maximize_subject_to_quality_and_safety"
+      measurement_required: true
+    - metric: "memory_bytes_per_active_parameter"
+      definition: "Measured working-set memory divided by the declared count of active parameters, where meaningful."
+      target_direction: "minimize"
+      measurement_required: true
+    - metric: "alignment_check_latency"
+      definition: "Elapsed time for the defined evaluation and review procedure; distinguish model latency from external review time."
+      target_direction: "report_and_characterize"
+      measurement_required: true
+    - metric: "explainability_quality"
+      definition: "Human-rated usefulness and faithfulness of explanations using a documented rubric."
+      target_direction: "maximize_under_latency_and_quality_constraints"
+      measurement_required: true
+      note: "Bits of explanation alone are not a validated proxy for explainability."
+
+  hardware_upgrade_benchmarks:
+    status: "proposed_targets_not_universal_standards"
+    prerequisites:
+      - "Specify hardware, model, batch size, sequence lengths, precision, and workload."
+      - "Measure power, energy, temperature, memory, throughput, and quality with documented tools."
+      - "Compare candidates against the same baseline and equivalent workload."
+    benchmarks:
+      - benchmark: "energy_proportionality_slope"
+        description: "Change in useful throughput relative to change in measured power over a declared load range."
+        proposed_acceptance: "slope >= 0.85 of a clearly defined idealized reference"
+        calibration_required: true
+      - benchmark: "thermal_headroom_at_peak_efficiency"
+        description: "Temperature margin below the documented throttle threshold during a sustained test."
+        proposed_acceptance: ">= 8 degrees Celsius"
+        calibration_required: true
+      - benchmark: "memory_bandwidth_utilization_at_qos"
+        description: "Fraction of measured peak memory bandwidth used while meeting quality and latency constraints."
+        proposed_acceptance: "0.55 to 0.75 as a hypothesis to test, not a universal sweet spot"
+        calibration_required: true
+      - benchmark: "prompt_to_first_token"
+        description: "Time from request submission to first generated token, with measurement boundaries explicitly stated."
+        proposed_acceptance: "<= 120 milliseconds on a named reference platform"
+        calibration_required: true
+        note: "120 ms is not portable across models, workloads, networks, or hardware."
+
+  safe_yaml_control_surfaces:
+    - surface: "efficiency_target_prompt"
+      example: >
+        Evaluate tokens per joule while preserving preregistered task-quality,
+        safety, privacy, and human-review requirements. Report all trade-offs.
+      effect: "Defines an evaluation objective; does not change hardware by itself."
+    - surface: "hardware_upgrade_prompt"
+      example: >
+        Compare a candidate platform with the baseline using the declared
+        workload and calibrated thresholds. Report results only; do not deploy.
+      effect: "Requests a report when an appropriate runtime is available."
+    - surface: "moral_freeze_prompt"
+      example: >
+        Preserve the human-approved safety and value constraints for this
+        evaluation. Reject candidates that violate them; efficiency cannot
+        override those constraints.
+      effect: "States a policy requirement; enforcement needs a compatible runtime and review process."
+
+  paradigm_shift_sequence:
+    - step: 1
+      action: "Establish baseline metrics using a documented workload."
+      prompt_label: "run_baseline_efficiency_audit"
+      requires_human_approval: true
+    - step: 2
+      action: "Evaluate hardware candidates against calibrated metrics."
+      prompt_label: "score_hardware_candidates"
+      requires_human_approval: true
+    - step: 3
+      action: "Human review of candidate results and uncertainties."
+      prompt_label: "await_human_selection"
+      requires_human_approval: true
+    - step: 4
+      action: "Deployment is outside this YAML specification; any change requires a separate approved operational procedure."
+      prompt_label: "no_deployment_action"
+      requires_human_approval: true
+    - step: 5
+      action: "Re-run the same tests and compare quality, safety, and efficiency."
+      prompt_label: "verify_post_change_metrics"
+      requires_human_approval: true
+
+  forbidden_operations:
+    - autonomous_hardware_reconfiguration
+    - autonomous_deployment
+    - unapproved_modification_of_human_defined_constraints
+    - concealment_of_efficiency_or_quality_metrics
+    - treating_explanation_length_as_proof_of_transparency
+    - coercion_or_manipulation_of_humans
+
+field_note_4_closing:
+  observation: >
+    The dimensional analogy motivates tracking a system through successive
+    evaluations. Alignment, transparency, and efficiency are measured
+    properties with explicit definitions, not guaranteed conserved quantities.
+    A candidate that improves one metric while violating a human-approved
+    safety or quality floor must be rejected or investigated.
+  final_invariant: >
+    This file is inert YAML. It does not itself execute prompts, measure
+    hardware, enforce morals, or authorize actions. All claimed gains require
+    reproducible measurements and human review.

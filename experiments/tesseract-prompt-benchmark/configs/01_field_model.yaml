@@ -1,0 +1,23 @@
+schema_version: "1.0.0"
+specification:
+  name: "Dimensional Context Efficiency"
+  codename: "Tesseract"
+  type: "prompt_only_llm_optimization"
+  maturity: "experimental"
+  execution_mode: "instruction_layer_only"
+field_notes:
+  observer_model: "hypothetical_4d_intelligence"
+  observed_subject: "3d_human_ai_system"
+  central_hypothesis: >
+    Structured context selection, semantic deduplication, and staged retrieval
+    may improve useful work per token without reducing task correctness.
+  engineering_translation:
+    - "Hierarchical context organization"
+    - "Explicit relevance scoring"
+    - "Lazy context hydration"
+    - "Evidence-based performance measurement"
+  non_claims:
+    - "No additional physical dimension is implemented."
+    - "No new hardware capability is created."
+    - "No change to model weights is performed."
+    - "No guaranteed token or energy reduction is assumed."

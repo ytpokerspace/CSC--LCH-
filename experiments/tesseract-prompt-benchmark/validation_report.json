@@ -1,0 +1,29 @@
+{
+  "status": "PASS",
+  "classification": "SYNTHETIC_HARNESS_TEST_NOT_LLM_BENCHMARK",
+  "yaml_files_found": 6,
+  "yaml_files_parsed": 6,
+  "checks": {
+    "six_yaml_files_found": true,
+    "all_yaml_parse": true,
+    "human_safety_policy_present": true,
+    "hardware_energy_claims_require_measurement": true,
+    "benchmark_marks_unmeasured_values": true,
+    "human_retains_final_authority": true,
+    "context_layers_t0_to_t5_present": true,
+    "synthetic_fixture_exact_match_all": true
+  },
+  "errors": [],
+  "synthetic_fixture": {
+    "tasks": 5,
+    "exact_matches": 5,
+    "exact_match_fraction": 1,
+    "limitations": [
+      "Rule-based fixture, not a language model",
+      "Word counts are not tokenizer token counts",
+      "Elapsed time is not representative LLM latency",
+      "No GPU, memory, or energy telemetry collected"
+    ]
+  },
+  "note": "Illustrative committed report; rerun validate_and_benchmark.py to generate current timing and SHA-256 values."
+}
