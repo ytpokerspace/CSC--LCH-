@@ -104,6 +104,7 @@ def main() -> None:
     selected = [int(item) for item in args.selected.split(",") if item.strip()]
     report = run_benchmark(SYNTHETIC_CORPUS, selected, args.model)
     rendered = json.dumps(report, ensure_ascii=False, indent=2) + "\n"
+    Path(args.output).parent.mkdir(parents=True, exist_ok=True)
     Path(args.output).write_text(rendered, encoding="utf-8")
     print(rendered, end="")
     print(f"Saved report: {args.output}")
