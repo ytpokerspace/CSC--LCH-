@@ -1,9 +1,5 @@
 """Offline CSC-LCH dictionary and lazy-hydration benchmark.
 
-Examples:
-  python csc_lch_compression_bench.py
-  python csc_lch_compression_bench.py --selected 0,2 --output report.json
-
 Selection is supplied explicitly (oracle selection). This measures payload cost,
 not semantic retrieval accuracy or live API billing.
 """
@@ -15,8 +11,12 @@ from pathlib import Path
 from typing import List
 
 from csc_lch_codec import (
-    build_lazy_payload, build_lazy_raw_payload, decode_documents, decode_lazy_payload,
-    encode_documents, tokenizer_counter,
+    build_lazy_payload,
+    build_lazy_raw_payload,
+    decode_documents,
+    decode_lazy_payload,
+    encode_documents,
+    tokenizer_counter,
 )
 
 SYNTHETIC_CORPUS = [
@@ -41,21 +41,23 @@ def run_benchmark(documents: List[str], selected_ids: List[int], model: str = "g
     if reconstructed != [original]:
         raise AssertionError("full-corpus reconstruction mismatch")
 
-    lazy = build_lazy_payload(documents, selected_ids)
-    lazy_raw = build_lazy_raw_payload(documents, selected_ids)
-    index, actual_ids, hydrated = decode_lazy_payload(lazy)
-    expected = [documents[i] for i in sorted(set(selected_ids))]
-    if actual_ids != sorted(set(selected_ids)) or hydrated != expected:
+    normalized_ids = sorted(set(selected_ids))
+    expected = [documents[i] for i in normalized_ids]
+    lazy_dictionary = build_lazy_payload(documents, normalized_ids)
+    lazy_raw = build_lazy_raw_payload(documents, normalized_ids)
+    index, actual_ids, hydrated = decode_lazy_payload(lazy_dictionary)
+    if actual_ids != normalized_ids or hydrated != expected:
         raise AssertionError("lazy hydration reconstruction mismatch")
 
     raw_tokens = count_tokens(original)
     full_tokens = count_tokens(full.serialized)
-    lazy_tokens = count_tokens(lazy)
+    lazy_dictionary_tokens = count_tokens(lazy_dictionary)
     lazy_raw_tokens = count_tokens(lazy_raw)
-    selected_raw_tokens = count_tokens("\\n\\n".join(expected))
+    selected_raw_tokens = count_tokens("\n\n".join(expected))
+
     raw_bytes = len(original.encode("utf-8"))
     full_bytes = len(full.serialized.encode("utf-8"))
-    lazy_bytes = len(lazy.encode("utf-8"))
+    lazy_dictionary_bytes = len(lazy_dictionary.encode("utf-8"))
     lazy_raw_bytes = len(lazy_raw.encode("utf-8"))
 
     def delta(new: int, baseline: int) -> float:
@@ -67,31 +69,43 @@ def run_benchmark(documents: List[str], selected_ids: List[int], model: str = "g
         "tokenizer": tokenizer_name,
         "model": model,
         "documents": len(documents),
-        "selected_document_ids": sorted(set(selected_ids)),
-        "selected_document_count": len(set(selected_ids)),
+        "selected_document_ids": normalized_ids,
+        "selected_document_count": len(normalized_ids),
         "source_characters": len(original),
         "dictionary_entries": full.dictionary_entries,
         "integrity": {
             "full_corpus_exact": reconstructed == [original],
             "lazy_selected_exact": hydrated == expected,
-                    },
+        },
         "measurements": {
-            "raw_full_context": {"utf8_bytes": raw_bytes, "tokens": raw_tokens},
+            "raw_full_context": {
+                "utf8_bytes": raw_bytes,
+                "tokens": raw_tokens,
+            },
             "encoded_full_corpus": {
                 "utf8_bytes": full_bytes,
                 "tokens": full_tokens,
                 "token_delta_percent_vs_raw": round(delta(full_tokens, raw_tokens), 3),
                 "byte_delta_percent_vs_raw": round(delta(full_bytes, raw_bytes), 3),
             },
-            "lazy_index_plus_selected_raw_text": {\n                "utf8_bytes": lazy_raw_bytes,\n                "tokens": lazy_raw_tokens,\n                "token_delta_percent_vs_raw_full_context": round(delta(lazy_raw_tokens, raw_tokens), 3),\n                "byte_delta_percent_vs_raw_full_context": round(delta(lazy_raw_bytes, raw_bytes), 3),\n            },\n            "selected_raw_documents_without_index": {"tokens": selected_raw_tokens},\n            "lazy_index_plus_dictionary_encoded_payload": {
-                "utf8_bytes": lazy_bytes,
-                "tokens": lazy_tokens,
-                "token_delta_percent_vs_raw_full_context": round(delta(lazy_tokens, raw_tokens), 3),
-                "byte_delta_percent_vs_raw_full_context": round(delta(lazy_bytes, raw_bytes), 3),
+            "selected_raw_documents_without_index": {
+                "tokens": selected_raw_tokens,
+            },
+            "lazy_index_plus_selected_raw_text": {
+                "utf8_bytes": lazy_raw_bytes,
+                "tokens": lazy_raw_tokens,
+                "token_delta_percent_vs_raw_full_context": round(delta(lazy_raw_tokens, raw_tokens), 3),
+                "byte_delta_percent_vs_raw_full_context": round(delta(lazy_raw_bytes, raw_bytes), 3),
+            },
+            "lazy_index_plus_dictionary_encoded_payload": {
+                "utf8_bytes": lazy_dictionary_bytes,
+                "tokens": lazy_dictionary_tokens,
+                "token_delta_percent_vs_raw_full_context": round(delta(lazy_dictionary_tokens, raw_tokens), 3),
+                "byte_delta_percent_vs_raw_full_context": round(delta(lazy_dictionary_bytes, raw_bytes), 3),
             },
         },
         "limitations": [
-            "Dictionary encoding is lossless serialization, not semantic compression or summarization.",
+            "Dictionary encoding is lossless serialization, not semantic summarization.",
             "Lazy document selection is supplied by the caller (oracle selection); retrieval relevance is not measured.",
             "Token counts are local tokenizer counts only when tiktoken is installed; no API calls or billing are involved.",
             "Real prompt framing, system instructions, tool schemas, and provider-side tokenization overhead are excluded.",
