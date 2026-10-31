@@ -64,7 +64,7 @@ class SemanticGraphTests(unittest.TestCase):
         a = graph.intern("a")
         with self.assertRaises(ValueError):
             graph.connect(a, a)
-        with self.assertRaises(ValueError):
+        with self.assertRaises(KeyError):
             graph.connect(a, 999)
 
     def test_encode_decode_retains_original_exactly(self):
