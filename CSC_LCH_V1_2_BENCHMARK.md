@@ -42,3 +42,23 @@ schemas are excluded.
 
 A positive token delta means the payload costs more tokens than the baseline.
 That is a valid result and must not be presented as a saving.
+
+## First measured fixture result
+
+The initial five-document synthetic fixture (documents 0 and 2 selected) was
+run with the local `tiktoken` encoding associated with `gpt-4o`:
+
+| Representation | Tokens | Delta vs full raw context |
+|---|---:|---:|
+| Full raw context | 140 | baseline |
+| Full dictionary-encoded corpus | 682 | +387.143% |
+| Selected raw documents only (no index) | 51 | reference only |
+| Index + selected raw documents | 113 | -19.286% |
+| Index + dictionary-encoded selected documents | 323 | +130.714% |
+
+This fixture demonstrates that the current JSON dictionary representation is
+inefficient for LLM prompt text. The raw lazy-selection representation reduced
+the measured input by 19.286% because two of five documents were selected, but
+selection was supplied by the test. It does not establish retrieval accuracy or
+generalize to other corpora. Treat these as fixture measurements, not production
+performance claims.
