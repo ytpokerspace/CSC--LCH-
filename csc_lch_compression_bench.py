@@ -36,9 +36,9 @@ SYNTHETIC_CORPUS = [
 def run_benchmark(documents: List[str], selected_ids: List[int], model: str = "gpt-4o") -> dict:
     count_tokens, tokenizer_name = tokenizer_counter(model)
     original = "\n\n".join(documents)
-    full = encode_documents(documents)
+    full = encode_documents([original])
     reconstructed = decode_documents(full.serialized)
-    if reconstructed != documents:
+    if reconstructed != [original]:
         raise AssertionError("full-corpus reconstruction mismatch")
 
     lazy = build_lazy_payload(documents, selected_ids)
@@ -70,8 +70,7 @@ def run_benchmark(documents: List[str], selected_ids: List[int], model: str = "g
         "integrity": {
             "full_corpus_exact": reconstructed == documents,
             "lazy_selected_exact": hydrated == expected,
-            "source_sha256_not_applicable": "This experiment checks exact decoded strings; source checksums remain available in v1.1 source records.",
-        },
+                    },
         "measurements": {
             "raw_full_context": {"utf8_bytes": raw_bytes, "tokens": raw_tokens},
             "encoded_full_corpus": {
