@@ -68,7 +68,7 @@ def run_benchmark(documents: List[str], selected_ids: List[int], model: str = "g
         "source_characters": len(original),
         "dictionary_entries": full.dictionary_entries,
         "integrity": {
-            "full_corpus_exact": reconstructed == documents,
+            "full_corpus_exact": reconstructed == [original],
             "lazy_selected_exact": hydrated == expected,
                     },
         "measurements": {
