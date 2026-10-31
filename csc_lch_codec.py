@@ -119,3 +119,16 @@ def decode_lazy_payload(serialized: str) -> Tuple[List[Dict[str, int]], List[int
     if len(selected) != len(docs):
         raise ValueError("selected IDs and documents differ in length")
     return index, selected, docs
+
+def build_lazy_raw_payload(documents: Sequence[str], selected_ids: Sequence[int]) -> str:
+    """Build an exact lazy payload with a compact index and unencoded selected text."""
+    selected = sorted(set(selected_ids))
+    if any(isinstance(i, bool) or not isinstance(i, int) or i < 0 or i >= len(documents) for i in selected):
+        raise ValueError("selected document ID out of range")
+    result = {
+        "version": CODEC_VERSION,
+        "index": [{"id": i, "characters": len(documents[i])} for i in range(len(documents))],
+        "selected_document_ids": selected,
+        "selected_documents": [documents[i] for i in selected],
+    }
+    return json.dumps(result, ensure_ascii=False, separators=(",", ":"))
