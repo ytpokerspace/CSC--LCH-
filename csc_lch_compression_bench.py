@@ -20,16 +20,16 @@ from csc_lch_codec import (
 )
 
 SYNTHETIC_CORPUS = [
-    ("architecture", "CSC LCH preserves source text, builds a semantic graph, and retrieves context lazily. "
-     "The semantic graph stores reusable symbols and typed relationships."),
-    ("benchmarking", "A benchmark must compare the original prompt with the complete encoded payload. "
-     "Dictionary overhead, retrieval overhead, and reconstruction must all be measured."),
-    ("reconstruction", "Exact reconstruction means every character is restored, including whitespace, "
-     "punctuation, Unicode, and emoji such as 🧠."),
-    ("retrieval", "Lazy context hydration retrieves only selected documents. Selection is supplied by the "
-     "benchmark and does not prove that a semantic retriever can select relevant documents."),
-    ("repeated-patterns", "CSC LCH preserves source text, builds a semantic graph, and retrieves context lazily. "
-     "Repeated terms can make dictionary coding useful, but the dictionary itself has a cost."),
+    "CSC LCH preserves source text, builds a semantic graph, and retrieves context lazily. "
+    "The semantic graph stores reusable symbols and typed relationships.",
+    "A benchmark must compare the original prompt with the complete encoded payload. "
+    "Dictionary overhead, retrieval overhead, and reconstruction must all be measured.",
+    "Exact reconstruction means every character is restored, including whitespace, "
+    "punctuation, Unicode, and emoji such as 🧠.",
+    "Lazy context hydration retrieves only selected documents. Selection is supplied by the "
+    "benchmark and does not prove that a semantic retriever can select relevant documents.",
+    "CSC LCH preserves source text, builds a semantic graph, and retrieves context lazily. "
+    "Repeated terms can make dictionary coding useful, but the dictionary itself has a cost.",
 ]
 
 
