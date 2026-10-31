@@ -2,9 +2,9 @@
 
 ## Purpose
 
-This milestone measures a concrete, reversible dictionary serialization experiment
-against the unencoded source. It also measures a lazy payload containing an index
-and only explicitly selected documents.
+This milestone measures a concrete, reversible dictionary serialization
+experiment against unencoded source. It also separates the effect of lazy
+selection from the overhead of dictionary encoding.
 
 ## Run locally
 
@@ -21,21 +21,24 @@ token counts use the local encoding associated with the selected model (default
 `gpt-4o`). Without it, the output clearly labels counts as a lexical proxy,
 not model tokens.
 
-## What is measured
+## Comparisons
 
-- Raw full-context UTF-8 bytes and tokenizer tokens.
-- Complete dictionary-encoded payload bytes and tokens, including dictionary
-  and JSON overhead.
-- Lazy index plus selected-document payload bytes and tokens.
-- Exact reconstruction of the full corpus and selected hydrated documents.
+- Raw full context.
+- Complete lossless dictionary-encoded corpus, including dictionary and JSON overhead.
+- Selected raw documents without an index (lower-bound context reference).
+- Lazy index plus selected raw documents.
+- Lazy index plus dictionary-encoded selected documents.
+
+All selected-document variants use caller-supplied IDs (oracle selection).
+Exact reconstruction is checked for the full corpus and selected documents.
 
 ## Interpretation limits
 
-This is **lossless dictionary coding**, not semantic summarization. The lazy
-benchmark receives selected document IDs from the caller (oracle selection);
-it does not measure whether a retriever can find relevant documents. The result
-does not establish production LLM savings, answer quality, latency, or API cost.
-Provider prompt framing and tool-schema overhead are excluded.
+This is **lossless dictionary coding**, not semantic summarization. The benchmark
+does not measure whether a retrieval model selects relevant documents, answer
+quality, latency, or production API cost. Token counts are local tokenizer
+counts, not provider billing; prompt framing, system instructions, and tool
+schemas are excluded.
 
-A positive token delta means the encoded payload costs more tokens than the
-unencoded baseline. That is a valid and useful result.
+A positive token delta means the payload costs more tokens than the baseline.
+That is a valid result and must not be presented as a saving.
