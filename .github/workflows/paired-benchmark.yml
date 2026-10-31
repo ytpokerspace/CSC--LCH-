@@ -12,11 +12,19 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
+      - name: Install local tokenizer for v1.2 measurement
+        run: python -m pip install tiktoken
       - name: Run tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Run v1.2 tokenizer benchmark
+        run: python csc_lch_compression_bench.py --selected 0,2 --output artifacts/csc_lch_v1_2_benchmark.json
       - name: Run paired synthetic fixture
         run: python scripts/paired_benchmark.py tests/fixtures/paired_sample.jsonl --json-out artifacts/paired_summary.json --csv-out artifacts/paired_summary.csv
       - uses: actions/upload-artifact@v4
         with:
           name: csc-lch-paired-benchmark
           path: artifacts/paired_summary.*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csc-lch-v1.2-tokenizer-benchmark
+          path: artifacts/csc_lch_v1_2_benchmark.json
