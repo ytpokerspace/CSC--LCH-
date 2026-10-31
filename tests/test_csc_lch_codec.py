@@ -1,8 +1,9 @@
 """Tests for lossless dictionary encoding and hydration payloads."""
+import json
 import unittest
 
 from csc_lch_codec import (
-    build_lazy_payload, decode_documents, decode_lazy_payload, encode_documents,
+    build_lazy_payload, build_lazy_raw_payload, decode_documents, decode_lazy_payload, encode_documents,
     split_exact,
 )
 from csc_lch_compression_bench import SYNTHETIC_CORPUS, run_benchmark
@@ -37,6 +38,12 @@ class CodecTests(unittest.TestCase):
         self.assertEqual(len(index), 3)
         self.assertEqual(ids, [0, 2])
         self.assertEqual(hydrated, ["alpha alpha", "gamma"])
+
+    def test_raw_lazy_payload_keeps_selected_text_exact(self):
+        docs = ["first", "second 🧠", "third"]
+        payload = json.loads(build_lazy_raw_payload(docs, [1]))
+        self.assertEqual(payload["selected_documents"], ["second 🧠"])
+        self.assertEqual(payload["selected_document_ids"], [1])
 
     def test_lazy_payload_rejects_invalid_selection(self):
         with self.assertRaises(ValueError):
