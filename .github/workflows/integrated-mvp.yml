@@ -1,0 +1,26 @@
+name: Integrated CSC LCH MVP
+
+on:
+  push:
+    paths:
+      - "csc_lch_integrated.py"
+      - "test_csc_lch_integrated.py"
+      - ".github/workflows/integrated-mvp.yml"
+  pull_request:
+    paths:
+      - "csc_lch_integrated.py"
+      - "test_csc_lch_integrated.py"
+      - ".github/workflows/integrated-mvp.yml"
+
+jobs:
+  offline-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Compile
+        run: python -m py_compile csc_lch_integrated.py test_csc_lch_integrated.py
+      - name: Run unit tests
+        run: python -m unittest -v test_csc_lch_integrated.py
