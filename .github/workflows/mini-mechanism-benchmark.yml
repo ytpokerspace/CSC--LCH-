@@ -1,0 +1,24 @@
+name: Mini mechanism benchmark
+
+on:
+  workflow_dispatch:
+  push:
+    paths:
+      - "tests/mini_mechanism_benchmark.py"
+      - ".github/workflows/mini-mechanism-benchmark.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run deterministic zero-cost benchmark
+        run: python tests/mini_mechanism_benchmark.py
