@@ -100,3 +100,13 @@ This repository is licensed under the GNU General Public License v3.0 or later (
 **Current status:** Research framework/prototype. Treat unmeasured outcomes as hypotheses, not established results.
 
 **Contribution and license:** The original framework is attributed in this repository to William Gunnell Cox. Contributions and third-party material should retain their own attribution and license obligations. Licensed under GPL-3.0-or-later; see [LICENSE](LICENSE).
+
+## Research and sponsorship brief
+
+The project brief in [SPONSOR_BRIEF.md](SPONSOR_BRIEF.md) summarizes the research question, available evidence, limitations, and possible collaboration scope.
+
+## Local tokenizer audit
+
+`benchmarks/tokenizer_audit.py` uses the public `tiktoken` package with `o200k_base` to count a synthetic prompt payload locally. It makes no model-generation or provider API calls. These counts are exact for the text passed to that encoding, not provider-reported or billed request usage, and they do not measure answer correctness or semantic equivalence.
+
+The optional GitHub Actions tokenizer-audit job installs `tiktoken` and stores its report as an artifact. The separate offline job runs the standard-library regression suite and dry-run harness with the API key explicitly unset.
