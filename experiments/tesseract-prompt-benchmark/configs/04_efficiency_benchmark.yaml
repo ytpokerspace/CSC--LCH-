@@ -1,0 +1,62 @@
+schema_version: "1.0.0"
+benchmark:
+  name: "Tesseract Prompt Efficiency Benchmark"
+  version: "1.0.0"
+  status: "proposed"
+  purpose: "Measure efficiency without sacrificing correctness"
+  comparison:
+    baseline: {name: "Original Prompt", preserve_task: true, preserve_model: true, preserve_model_settings: true}
+    candidate:
+      name: "Structured Semantic Context"
+      preserve_task: true
+      preserve_model: true
+      preserve_model_settings: true
+      change_only: ["Context organization", "Retrieval instructions", "Redundancy handling", "Output verification instructions"]
+  methodology:
+    use_identical_test_cases: true
+    use_paired_comparisons: true
+    randomize_test_order_when_practical: true
+    record_model_version: true
+    record_prompt_version: true
+    record_timestamp: true
+    separate_training_from_evaluation: true
+    report_sample_size: true
+    report_variability: true
+    publish_failures: true
+  metrics:
+    token_efficiency:
+      input_tokens: {unit: "tokens", objective: "minimize"}
+      output_tokens: {unit: "tokens", objective: "minimize_subject_to_correctness"}
+      total_tokens: {formula: "input_tokens + output_tokens", objective: "minimize_subject_to_quality"}
+    performance:
+      latency: {unit: "milliseconds", measure: ["Median", "P95"], objective: "minimize"}
+      throughput: {unit: "tasks_per_second", objective: "maximize", require_measured_runtime: true}
+    quality:
+      exact_match: {unit: "fraction", objective: "maximize"}
+      task_success: {unit: "fraction", objective: "maximize"}
+      factual_consistency: {unit: "fraction", objective: "maximize"}
+      constraint_compliance: {unit: "fraction", objective: "maximize"}
+    resource_efficiency:
+      energy_per_task: {unit: "joules", require_hardware_telemetry: true, objective: "minimize"}
+      peak_memory: {unit: "bytes", require_runtime_measurement: true, objective: "minimize"}
+      hardware_utilization: {require_runtime_measurement: true, report_if_available: true}
+  acceptance:
+    require_quality_noninferiority: true
+    require_safety_noninferiority: true
+    require_reproducible_measurements: true
+    reject_unverified_performance_claims: true
+    minimum_quality_threshold: {source: "pre_registered_task_specific_threshold", allow_post_result_adjustment: false}
+  calculations:
+    token_reduction_percent: "100 * (baseline_total_tokens - candidate_total_tokens) / baseline_total_tokens"
+    latency_reduction_percent: "100 * (baseline_latency - candidate_latency) / baseline_latency"
+    energy_reduction_percent: "100 * (baseline_energy - candidate_energy) / baseline_energy"
+    invalid_denominator_policy: "report_not_calculable"
+  reporting:
+    label_unmeasured_values: "NOT_MEASURED"
+    label_simulated_values: "SIMULATED"
+    label_measured_values: "MEASURED"
+    include_baseline_results: true
+    include_candidate_results: true
+    include_quality_regressions: true
+    include_test_environment: true
+    never_substitute_estimates_for_measurements: true

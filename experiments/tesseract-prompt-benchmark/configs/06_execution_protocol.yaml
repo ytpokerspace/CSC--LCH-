@@ -1,0 +1,25 @@
+schema_version: "1.0.0"
+protocol:
+  name: "Human-Centered Semantic Compute Experiment"
+  execution: "instruction_following"
+  external_side_effects: false
+  stages:
+    - id: "S1"
+      name: "Establish Baseline"
+      actions: ["Run representative tasks with the original prompt.", "Record token counts, latency, and correctness.", "Record available resource measurements."]
+    - id: "S2"
+      name: "Structure Context"
+      actions: ["Separate task requirements from supporting evidence.", "Identify redundant information.", "Preserve critical constraints and original sources.", "Mark uncertainty explicitly."]
+    - id: "S3"
+      name: "Process Candidate"
+      actions: ["Retrieve only information relevant to the current task.", "Preserve details needed to reproduce the result.", "Generate the candidate output.", "Verify task-specific requirements."]
+    - id: "S4"
+      name: "Evaluate"
+      actions: ["Compare against the same baseline test cases.", "Measure token and latency differences.", "Evaluate correctness and safety.", "Record failures and variability."]
+    - id: "S5"
+      name: "Decide"
+      conditions: {quality_regression: "reject_or_investigate", safety_regression: "reject", no_measurable_efficiency_gain: "retain_baseline", reproducible_gain_without_regression: "candidate_eligible"}
+      final_authority: "human_operator"
+  output_contract:
+    include: ["Configuration version", "Test methodology", "Measured results", "Uncertainty", "Known limitations", "Reproduction instructions"]
+  final_constraint: "YAML configures intended behavior; it does not itself enforce compliance, implement a retrieval database, modify hardware, or guarantee benchmark outcomes."

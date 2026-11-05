@@ -1,92 +1,112 @@
 # CSC-LCH
-**Cascading Semantic Compression + Lazy Context Hydration**
+## Cascading Semantic Compression + Lazy Context Hydration
 
-CSC-LCH is a research prototype for reducing repeated or unnecessary context while preserving the information required to answer correctly. It combines conservative deduplication/compression with tiered context and retrieval of deferred details when they matter.
+**Creator and author: William Gunnell Cox**  
+**Project:** CSC-LCH — original cascading semantic compression and lazy context hydration framework  
+**Status:** Public research prototype; benchmark claims must be independently reproduced.
 
-**Status:** research prototype; not a production guarantee. The project has not established a general real-model accuracy improvement or universal token savings. Results depend on the input corpus, tokenizer, prompt overhead, retrieval quality, and task.
+CSC-LCH is a context-management approach for large language model (LLM) workflows. It aims to reduce repeated or low-priority context in the active prompt while preserving essential meaning and retrieving deferred information when it becomes relevant.
 
-## Start here
+The central idea is **compress what can safely be summarized, keep critical semantics explicit, and lazily hydrate supporting context only when needed**.
 
-The main harness is `csc_lch_bench.py`. It can run an offline logic smoke test without an API key or model generation:
+## Original design
 
-```bash
-python3 csc_lch_bench.py --dry-run --scale 1 --out benchmark-results/csc-lch-dry-run
-```
+The framework combines two mechanisms:
 
-This creates a text report and JSON report. In `--dry-run` mode, token figures are **estimates, not real tokenizer counts**. The default output path's parent directory must exist; create it first with `mkdir -p benchmark-results` on macOS/Linux or `New-Item -ItemType Directory -Force benchmark-results` in PowerShell.
+1. **Cascading Semantic Compression** — organize context by importance and compress redundant wording progressively, rather than treating every token as equally valuable.
+2. **Lazy Context Hydration** — retain references to supporting or archived material and retrieve the original details only when a question or decision requires them.
 
-Run the offline regression tests:
+### Context tiers
 
-```bash
-python3 -m unittest discover -s tests -v
-```
+The initial design uses tiers to express how aggressively information may be compressed or deferred:
 
-No third-party Python packages are required for the benchmark harness and its offline tests.
+| Tier | Role | Handling principle |
+|---|---|---|
+| T0 | Immutable anchors | Never compress away or defer critical constraints, safety requirements, or required output formats. |
+| T1 | Core semantics | Preserve the goal, essential facts, and success criteria explicitly. |
+| T2 | Active context | Keep current state, dependencies, and active decisions available while relevant. |
+| T3 | Supporting context | Retain useful explanations and supporting detail; summarize carefully. |
+| T4 | Distant context | Defer details that are not currently needed, while preserving a retrieval path. |
+| T5 | Archive | Keep older or low-relevance source material retrievable rather than silently discarding it. |
 
-## Local tokenizer audit (no model calls)
+Tier labels are a context-management convention, not a claim that a model internally stores information in these exact layers.
 
-The optional tokenizer audit uses the public `tiktoken` package with its `o200k_base` encoding, associated with the GPT-4o model family. It counts the concatenated prompt text, including the CSC-LCH legend and hydration tool schema where applicable:
+### Evidence markers
 
-```bash
-python3 -m pip install tiktoken
-python3 benchmarks/tokenizer_audit.py --scale 1 --out benchmark-results/tokenizer-audit
-```
+- `OBS` — observed or explicitly supplied information.
+- `INF` — inference supported by available evidence.
+- `SPEC` — speculation or an unverified hypothesis.
 
-This does not call a provider API or generate model output. The counts are exact for the text passed to that local encoding, but they are **not provider-reported request counts or billed usage**: chat framing and provider-specific tool accounting can differ. The bundled corpus is synthetic, and this audit does not measure answer quality or prove semantic equivalence. CI runs this audit separately from the standard-library-only offline tests.
+Do not silently promote inference or speculation to observed fact. Preserve source provenance when details may affect an answer.
 
-### Latest measured local tokenizer audit
+## Repository contents
 
-GitHub Actions run [#40189573422](https://github.com/ytpokerspace/CSC--LCH-/actions/runs/40189573422) completed successfully on 2026-10-25. On the 17-question synthetic corpus (seed 7, scale 1), the local `o200k_base` audit reported these mean input-payload counts:
+- [`csc_lch_chatbot_instructions.yaml`](csc_lch_chatbot_instructions.yaml) — YAML prompt-layer specification.
+- [`csc_lch_bench.py`](csc_lch_bench.py) — benchmark harness for token counting, compression stages, projections, and optional quality checks.
+- [`csc_lch_bench.yaml`](csc_lch_bench.yaml) — YAML-packaged benchmark source.
+- [`benchmarks/milestone6_report.md`](benchmarks/milestone6_report.md) — reported T3/T4/T5 ablation results and the Milestone 6.1 total-cost validation protocol (reported aggregates are not independently reproduced yet).
+- [`LICENSE`](LICENSE) — GNU GPL v3.0 or later (GPL-3.0-or-later).
 
-| Condition | Mean tokens per question | Difference vs full context |
-|---|---:|---:|
-| Full context | 4,225.65 | Baseline |
-| Literal glyph layer + deferral | 4,086.65 | 3.29% fewer |
-| No glyph layer + deferral | 4,040.65 | 4.38% fewer |
-| Token-aware glyph layer + deferral | 4,086.65 | 3.29% fewer |
+## Reproduce carefully
 
-These are measured tokenizer counts for the exact concatenated text payload used by this script, including the system instructions, context, question, and applicable registry/tool-schema overhead. They are **not provider-reported API usage**. The script represents hydration by including the tool schema; it does not simulate actual hydration calls or count any later retrieved content. The test is synthetic and does not measure answer correctness or semantic equivalence. In this run, the no-glyph variant had the lowest measured prompt-payload count; emoji substitution did not improve on that variant.
-
-## Using your own context
-
-Prepare a UTF-8 plain-text file with context segments separated by blank lines. Optional tags `[T0]` through `[T5]` at the start of a segment let you specify tiers. Supply a separate JSON QA file if you want the optional quality test to score task-specific required/forbidden patterns.
-
-For an API-backed token-count run, provide an Anthropic API key through the environment and verify the provider's current pricing, terms, and rate limits before running. The token-count endpoint does not generate an answer, but availability and pricing may change. **Do not use `--quality` for the zero-cost workflow:** it performs live model calls and may incur charges. The harness asks for confirmation before paid quality calls unless `--yes` is passed; never pass `--yes` unless you have explicitly approved the run and budget.
-
-Example commands for later, separately authorized work:
+The benchmark supports a dry-run mode for offline logic checks:
 
 ```bash
-export ANTHROPIC_API_KEY="..."  # keep secrets out of source control
-python3 csc_lch_bench.py --corpus context.txt --tiering tags --out results/context
+python3 csc_lch_bench.py --dry-run
 ```
 
-To run the optional live quality evaluation, prepare a task-specific QA JSON file and review the task count, model, maximum output tokens, provider-side spending controls, and budget first. The offline CI does not execute this path.
+For token-counting or quality experiments, read the script's help and inspect its options first. Provider-backed quality tests may make network requests and can incur charges depending on the selected service and current terms. **No paid API calls are required to review the concept or run the offline dry run.** Do not run live tests unless you deliberately authorize them and understand the costs.
 
-## How to interpret results
+Use your own representative corpus for meaningful evaluation. Synthetic examples cannot establish real-world savings for your workload.
 
-- **Token counts:** distinguish offline estimates from provider-reported counts; include legends, instructions, retrieval tools, and hydrated context in comparisons.
-- **Correctness:** exact reconstruction of a text representation is not the same as semantic equivalence or model-answer correctness.
-- **Retrieval:** report missed facts and unnecessary hydrations, not just average savings.
-- **Performance:** report latency and model-call count alongside tokens and quality.
-- **Synthetic results:** validate harness behavior only; they do not establish real-world performance.
-- **Projections:** arithmetic extrapolations are hypotheses, not measurements at scale.
+## Evaluation standard
 
-Always compare the original context, compressed context without hydration, and compressed context with hydration on the same tasks and scoring rules. Retain per-task failures. Prefer a fallback to original context whenever the system cannot preserve constraints with confidence.
+Compare original context and compressed-plus-hydrated context on the same tasks. Report:
 
-## Architecture at a glance
+- actual input and output token counts from the named tokenizer or provider counting endpoint;
+- compression, decoding, and hydration overhead;
+- answer correctness and material-fact preservation;
+- latency and number of retrieval/hydration calls;
+- the test corpus, model/service, configuration, and date;
+- failed cases and limitations, not just successful examples.
 
-1. Protect critical instructions, constraints, quantities, negations, provenance, and uncertainty.
-2. Remove only verified redundancy and apply conservative compression.
-3. Keep references to deferred context rather than silently discarding it.
-4. Retrieve the smallest relevant original details when the task or verifier requires them.
-5. Check the result against explicit criteria and preserve an uncompressed fallback.
+Projected savings are not measured savings. Token reduction alone is not success if answer quality or essential information degrades.
 
-The YAML instruction set is a prompt-layer specification; it is not itself a standalone executable optimizer. The Python harness is the executable benchmark implementation.
+## Research status and limitations
 
-## Contributing and sponsorship
+CSC-LCH is a prompt/context-layer research approach. This repository does not establish that every LLM or workload will benefit, nor does it demonstrate a change inside a model's internal serving stack. Results depend on the context, tokenizer, model, retrieval strategy, and evaluation design.
 
-The project welcomes reproducibility reviews, independent benchmark design, tokenizer and retrieval analysis, test cases, and technical mentorship. See [SPONSOR_BRIEF.md](SPONSOR_BRIEF.md) for the current research question, evidence boundaries, and proposed next steps.
+Treat performance numbers as established only when the corresponding experiment has been run and its method and evidence are available.
+
+## Attribution
+
+CSC-LCH and the original framework concept documented here are attributed to **William Gunnell Cox**. If you build on this work, retain this attribution and cite this repository. Attribution does not imply that every subsequent contribution, implementation, or independent idea belongs to the original author.
 
 ## License
 
-See [LICENSE](LICENSE). This is a research prototype; review the license and any dependencies before incorporating it into a commercial product.
+This repository is licensed under the GNU General Public License v3.0 or later (GPL-3.0-or-later). See [LICENSE](LICENSE).
+
+
+## Project at a glance
+
+**What it is:** An experimental context-management framework for LLM workflows that combines tiered semantic summaries with on-demand retrieval of supporting source material.
+
+**Why it matters:** Long prompts can repeat information or include details that are not needed for the current task. CSC-LCH explores whether organizing context by importance and retrieving details only when needed can reduce prompt overhead without losing task-critical meaning.
+
+**What is included:** A documented tier model, evidence labels, source-preservation principles, and a research framework for evaluating context handling.
+
+**How to evaluate it:** Start with the design and implementation documents in this repository. For any performance claim, inspect the benchmark method and raw results, then reproduce the test with a stated tokenizer, model/workload, and baseline. This README does not claim a verified universal token or cost reduction.
+
+**Current status:** Research framework/prototype. Treat unmeasured outcomes as hypotheses, not established results.
+
+**Contribution and license:** The original framework is attributed in this repository to William Gunnell Cox. Contributions and third-party material should retain their own attribution and license obligations. Licensed under GPL-3.0-or-later; see [LICENSE](LICENSE).
+
+## Research and sponsorship brief
+
+The project brief in [SPONSOR_BRIEF.md](SPONSOR_BRIEF.md) summarizes the research question, available evidence, limitations, and possible collaboration scope.
+
+## Local tokenizer audit
+
+`benchmarks/tokenizer_audit.py` uses the public `tiktoken` package with `o200k_base` to count a synthetic prompt payload locally. It makes no model-generation or provider API calls. These counts are exact for the text passed to that encoding, not provider-reported or billed request usage, and they do not measure answer correctness or semantic equivalence.
+
+The optional GitHub Actions tokenizer-audit job installs `tiktoken` and stores its report as an artifact. The separate offline job runs the standard-library regression suite and dry-run harness with the API key explicitly unset.

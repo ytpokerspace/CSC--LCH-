@@ -1,0 +1,26 @@
+name: Tesseract YAML Validation
+
+on:
+  push:
+    paths:
+      - "experiments/tesseract-prompt-benchmark/**"
+      - ".github/workflows/tesseract-benchmark.yml"
+  pull_request:
+    paths:
+      - "experiments/tesseract-prompt-benchmark/**"
+      - ".github/workflows/tesseract-benchmark.yml"
+  workflow_dispatch:
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: experiments/tesseract-prompt-benchmark
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install -r requirements.txt
+      - run: python validate_and_benchmark.py

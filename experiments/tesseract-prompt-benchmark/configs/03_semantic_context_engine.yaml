@@ -1,0 +1,50 @@
+schema_version: "1.0.0"
+engine:
+  name: "CSC-LCH Semantic Context Engine"
+  expansion: "Cascading Semantic Compression and Lazy Context Hydration"
+  implementation: "prompt_instructions"
+  requires_external_runtime: false
+  operating_principles:
+    - "Preserve meaning before reducing representation."
+    - "Retrieve details when they become relevant."
+    - "Keep authoritative source material recoverable."
+    - "Never confuse a summary with the original evidence."
+    - "Use the smallest sufficient context that passes quality checks."
+context_layers:
+  T0: {name: "Immutable Task Anchor", priority: 100, purpose: "Preserve objective, constraints, and safety requirements", compression: "none"}
+  T1: {name: "Core Semantics", priority: 90, purpose: "Store essential facts, definitions, and relationships", compression: "meaning_preserving_only"}
+  T2: {name: "Active Context", priority: 75, purpose: "Include facts directly relevant to the current task", compression: "controlled"}
+  T3: {name: "Supporting Evidence", priority: 40, purpose: "Preserve examples, tests, citations, and alternatives", compression: "summary_with_source_reference"}
+  T4: {name: "Dormant Context", priority: 8, purpose: "Keep potentially relevant details available for retrieval", compression: "indexed_summary"}
+  T5: {name: "Archive References", priority: 2, purpose: "Identify original material for later recovery", compression: "reference_only"}
+priority_interpretation:
+  note: "Priorities are heuristic ordering values, not calibrated probabilities or guarantees of relevance."
+  override:
+    safety_constraints: "absolute"
+    user_explicit_requirements: "preserve"
+    source_integrity: "preserve"
+retrieval:
+  strategy: "lazy_hydration"
+  retrieve_when:
+    - "A required fact is missing."
+    - "A claim requires supporting evidence."
+    - "A summary is ambiguous."
+    - "A safety decision depends on omitted detail."
+    - "A verification test fails."
+  relevance:
+    consider: ["Task alignment", "Information freshness", "Source reliability", "Decision impact", "Uncertainty"]
+    never_use_relevance_as_permission_to_delete: true
+compression:
+  default_mode: "lossless_for_critical_information"
+  optional_mode: "lossy_with_explicit_authorization"
+  protected_content: ["Numbers and units", "Negations", "Conditions and exceptions", "Source identifiers", "Causal relationships", "Safety constraints", "Uncertainty labels", "User-defined requirements"]
+  validation:
+    verify_semantic_equivalence: true
+    verify_numeric_fidelity: true
+    verify_negation_fidelity: true
+    verify_constraint_fidelity: true
+    restore_source_on_failure: true
+  output:
+    distinguish_fact_from_inference: true
+    cite_retrieved_evidence_when_available: true
+    disclose_material_omissions: true

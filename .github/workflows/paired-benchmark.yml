@@ -1,0 +1,22 @@
+name: Paired CSC-LCH Benchmark
+on:
+  push:
+    branches: [main, "feat/paired-fair-benchmark"]
+  pull_request:
+  workflow_dispatch:
+jobs:
+  paired-benchmark:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Run paired synthetic fixture
+        run: python scripts/paired_benchmark.py tests/fixtures/paired_sample.jsonl --json-out artifacts/paired_summary.json --csv-out artifacts/paired_summary.csv
+      - uses: actions/upload-artifact@v4
+        with:
+          name: csc-lch-paired-benchmark
+          path: artifacts/paired_summary.*
