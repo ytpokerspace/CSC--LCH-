@@ -46,7 +46,7 @@ def verify_manifest(manifest_path, archive_root):
     missing = _REQUIRED_TOP - manifest.keys()
     if missing:
         raise ValueError("manifest missing fields: " + ", ".join(sorted(missing)))
-    if manifest["schema_version"] != 1:
+    if isinstance(manifest["schema_version"], bool) or not isinstance(manifest["schema_version"], int) or manifest["schema_version"] != 1:
         raise ValueError("unsupported schema_version; expected 1")
     for field in ("dataset_id", "dataset_version", "policy_version"):
         value = manifest[field]
