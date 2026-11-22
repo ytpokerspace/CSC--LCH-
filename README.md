@@ -100,3 +100,43 @@ This repository is licensed under the GNU General Public License v3.0 or later (
 **Current status:** Research framework/prototype. Treat unmeasured outcomes as hypotheses, not established results.
 
 **Contribution and license:** The original framework is attributed in this repository to William Gunnell Cox. Contributions and third-party material should retain their own attribution and license obligations. Licensed under GPL-3.0-or-later; see [LICENSE](LICENSE).
+
+
+## Source archive integrity gate (offline)
+
+The audit branch adds a manifest-driven verifier for checking that archived source
+records remain byte-for-byte intact. It uses only the Python standard library and
+hashes the exact bytes on disk; it does not normalize Unicode, whitespace, or line
+endings.
+
+Create a UTF-8 JSON manifest with this shape:
+
+```json
+{
+  "schema_version": 1,
+  "dataset_id": "my-corpus",
+  "dataset_version": "2026-01",
+  "policy_version": "T3-v1",
+  "run_config": {"evaluation": "offline"},
+  "source_records": [
+    {
+      "source_id": "doc-001",
+      "archive_path": "docs/doc-001.txt",
+      "sha256": "REPLACE_WITH_64_LOWERCASE_HEX_CHARACTERS",
+      "byte_length": 123
+    }
+  ]
+}
+```
+
+Run it from the repository root:
+
+```bash
+python3 scripts/source_integrity.py evidence/dataset_manifest.json evidence/source_archive
+python3 -m unittest discover -s tests -v
+```
+
+The archive root is an explicit trust boundary: each resolved source path must remain
+inside it, including after symlink resolution. A successful report means only that
+the listed files match their declared hashes and lengths. It does not establish
+semantic correctness, completeness of the dataset, or model answer fidelity.
