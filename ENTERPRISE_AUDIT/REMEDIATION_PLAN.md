@@ -68,3 +68,17 @@ Offline tests only by default. No provider-backed API calls, paid datasets, exte
 ## Change control
 
 This plan is additive. It does not alter the repository's existing license or claim that the acceptance criteria have passed. Resolve licensing centrally before publishing an SDK or changing distribution terms.
+
+
+## Implementation update — CSC-A1 source integrity increment
+
+The audit branch now includes an offline source archive integrity verifier:
+
+- `scripts/source_integrity.py` validates a versioned dataset manifest and checks each archived source's exact byte length and SHA-256 digest.
+- Source IDs must be unique; required dataset/policy metadata and run configuration must be present.
+- Archive paths are resolved and constrained to the declared archive root, including symlink resolution.
+- Duplicate JSON object keys are rejected rather than silently overwritten.
+- `tests/test_source_integrity.py` covers exact-byte verification (including Unicode and CRLF/trailing whitespace), tampering, duplicate IDs, path traversal, missing metadata, duplicate JSON keys, and length mismatch.
+- `.github/workflows/offline-tests.yml` adds a Python 3.11 compile and standard-library unittest gate.
+
+**Validation status:** implementation and test files are committed to this audit branch. The workflow is configured, but a completed CI result has not yet been confirmed in this audit. Do not treat the tests as passed until the Actions run is inspected. This verifier establishes integrity only for the source records explicitly listed in a manifest; it does not prove dataset completeness, semantic fidelity, or model answer correctness.
