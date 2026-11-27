@@ -68,7 +68,8 @@ class LongBenchAuditTests(unittest.TestCase):
                               top_k=1, chunk_chars=20, overlap_chars=2)
         self.assertEqual(result["dataset_examples"], 3)
         self.assertEqual(result["sample_examples_evaluated"], 2)
-        self.assertIsNone(result["answer_accuracy"])\n        self.assertIn("context_token_reduction_fraction", result["sampled_rows"])
+        self.assertIsNone(result["answer_accuracy"])
+        self.assertIn("context_token_reduction_fraction", result["sampled_rows"])
         self.assertEqual(len(result["sampled_rows"]["examples"]), 2)
 
 
