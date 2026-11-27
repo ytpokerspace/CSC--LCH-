@@ -100,3 +100,27 @@ This repository is licensed under the GNU General Public License v3.0 or later (
 **Current status:** Research framework/prototype. Treat unmeasured outcomes as hypotheses, not established results.
 
 **Contribution and license:** The original framework is attributed in this repository to William Gunnell Cox. Contributions and third-party material should retain their own attribution and license obligations. Licensed under GPL-3.0-or-later; see [LICENSE](LICENSE).
+
+## DSI-Ω memory interface (prototype)
+
+The DSI-Ω integration adds a replaceable memory contract and a local SQLite
+backend under [dsi_omega/](dsi_omega/). It preserves original text separately
+from caller-supplied summaries, records SHA-256 digests, and verifies integrity
+when deferred records are hydrated. T4/T5 search results are summary-only stubs
+by default; T0–T3 results are hydrated.
+
+The first retrieval implementation is a deterministic lexical baseline, not
+embedding-based semantic search. It uses only Python's standard library and
+does not require provider credentials or network access.
+
+Run the focused offline tests:
+
+```bash
+python -m unittest discover -s tests -p "test_dsi_omega_memory.py" -v
+```
+
+See [the interface design](docs/DSI_OMEGA_MEMORY_INTERFACE.md) and
+[the YAML configuration](dsi_omega_memory.yaml). This prototype is local and
+single-process; distributed synchronization and multi-user access controls are
+not implemented yet.
+
