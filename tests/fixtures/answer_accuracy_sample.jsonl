@@ -1,0 +1,6 @@
+{"question_id":"q1","policy":"full","prediction":"Paris","gold_answers":["Paris"],"data_status":"synthetic_fixture"}
+{"question_id":"q1","policy":"compressed","prediction":"Paris","gold_answers":["Paris"],"data_status":"synthetic_fixture"}
+{"question_id":"q2","policy":"full","prediction":"William Shakespeare","gold_answers":["William Shakespeare","Shakespeare"],"data_status":"synthetic_fixture"}
+{"question_id":"q2","policy":"compressed","prediction":"Shakespeare wrote plays","gold_answers":["William Shakespeare","Shakespeare"],"data_status":"synthetic_fixture"}
+{"question_id":"q3","policy":"full","prediction":"42","gold_answers":["42"],"data_status":"synthetic_fixture"}
+{"question_id":"q3","policy":"compressed","prediction":"41","gold_answers":["42"],"data_status":"synthetic_fixture"}
