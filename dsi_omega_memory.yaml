@@ -1,0 +1,46 @@
+# DSI-Ω / CSC-LCH memory interface configuration
+# Declarative configuration; loaded by an application, not executed by YAML itself.
+framework:
+  name: "DSI-Ω"
+  memory_layer: "CSC-LCH"
+  interface_version: "1.0.0"
+  author: "William Gunnell Cox"
+
+backend:
+  type: "sqlite"
+  database: "dsi_omega_memory.sqlite3"
+  external_services: false
+  network_access: false
+  dependencies: []
+
+records:
+  required_fields: [project_id, title, content, summary, tier, evidence]
+  tiers: [T0, T1, T2, T3, T4, T5]
+  evidence_markers: [OBS, INF, SPEC]
+  preserve_original_content: true
+  content_digest: "sha256-utf8"
+  metadata_encoding: "json"
+
+retrieval:
+  algorithm: "deterministic_lexical_baseline"
+  project_scoped: true
+  default_limit: 10
+  maximum_limit: 100
+  hydrate_tiers_by_default: [T0, T1, T2, T3]
+  return_summary_stubs_for: [T4, T5]
+  verify_digest_on_hydration: true
+  semantic_embeddings: false
+
+safety:
+  destructive_delete: false
+  deactivation_is_soft_delete: true
+  require_project_scope_for_search: true
+  reject_unknown_tiers: true
+  reject_unknown_evidence_markers: true
+  never_claim_unmeasured_token_savings: true
+
+future_backends:
+  - "sqlite_local"
+  - "distributed_sql"
+  - "remote_memory_service"
+  note: "Future backends must implement the MemoryBackend protocol."
