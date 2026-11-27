@@ -80,6 +80,7 @@ def rank_and_propose(candidates, step=0.1, min_accuracy=0.0):
             "next_candidates": [],
         }
     winner = eligible[0]
+    eligible_ids = {item["candidate_id"] for item in eligible}
     known = {tuple(round(item["controls"][key], 6) for key in CONTROLS) for item in candidates}
     proposals = []
     for key in CONTROLS:
@@ -114,7 +115,7 @@ def rank_and_propose(candidates, step=0.1, min_accuracy=0.0):
         "rejected_candidates": [
             {"candidate_id": item["candidate_id"], "critical_facts_pass": item["critical_facts_pass"],
              "answer_accuracy": item["answer_accuracy"]}
-            for item in candidates if item not in eligible
+            for item in candidates if item["candidate_id"] not in eligible_ids
         ],
         "next_candidates": proposals,
         "method_note": "Classical bounded coordinate search over measured candidates. Proposals require a real retrieval run and independent answer scoring before they can be ranked. No quantum computation or model/API calls are performed.",
