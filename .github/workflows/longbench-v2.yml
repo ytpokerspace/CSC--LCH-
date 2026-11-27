@@ -1,0 +1,57 @@
+name: LongBench v2 context experiment
+
+on:
+  workflow_dispatch:
+    inputs:
+      sample_size:
+        description: "Number of official LongBench v2 examples"
+        required: true
+        default: "10"
+        type: choice
+        options:
+          - "10"
+          - "50"
+          - "503"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: longbench-v2-context-experiment
+  cancel-in-progress: false
+
+jobs:
+  evaluate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: benchmarks/longbench_v2/requirements.txt
+
+      - name: Install benchmark dependency
+        run: python -m pip install -r benchmarks/longbench_v2/requirements.txt
+
+      - name: Run adapter unit tests
+        run: python -m unittest discover -s benchmarks/longbench_v2/tests -v
+
+      - name: Run LongBench v2 context experiment
+        run: >-
+          python benchmarks/longbench_v2/evaluate.py
+          --limit "\${{ inputs.sample_size }}"
+          --seed 2026
+          --output-dir research-results/longbench-v2
+
+      - name: Upload experiment results
+        uses: actions/upload-artifact@v4
+        with:
+          name: longbench-v2-context-results
+          path: research-results/longbench-v2/
+          if-no-files-found: error
+          retention-days: 30
