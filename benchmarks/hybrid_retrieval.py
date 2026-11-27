@@ -42,7 +42,6 @@ def _identifiers(text: str) -> set[str]:
 class RetrievalConfig:
     top_k: int = 5
     max_chars: int = 6000
-    overlap_sentences: int = 1
     bm25_k1: float = 1.2
     phrase_boost: float = 2.0
     identifier_boost: float = 3.0
@@ -98,10 +97,8 @@ class RetrievalResult:
         return 1.0 - self.retrieved_characters / self.source_characters
 
 
-def sentence_chunks(text: str, overlap_sentences: int = 1) -> list[Chunk]:
-    """Group adjacent sentences while retaining exact character offsets."""
-    if overlap_sentences < 0:
-        raise ValueError("overlap_sentences cannot be negative")
+def sentence_chunks(text: str) -> list[Chunk]:
+    """Split into sentence-sized retrieval units with exact character offsets."""
     if not text:
         return []
     spans = []
@@ -162,7 +159,7 @@ def _bm25(query_terms: list[str], documents: list[list[str]], k1: float) -> list
 def retrieve(context: str, query: str, config: RetrievalConfig | None = None) -> RetrievalResult:
     config = config or RetrievalConfig()
     config.validate()
-    chunks = sentence_chunks(context, config.overlap_sentences)
+    chunks = sentence_chunks(context)
     query_tokens = [t for t in terms(query) if t not in STOPWORDS]
     query_set = set(query_tokens)
     query_phrase = " ".join(query.strip().lower().split())
