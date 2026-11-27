@@ -191,7 +191,8 @@ def retrieve(context: str, query: str, config: RetrievalConfig | None = None) ->
         for pos, item in enumerate(remaining):
             score, chunk, matched, phrase, ids, present = item
             cost = len(chunk.text)
-            if used_chars + cost > config.max_chars:
+            separator_cost = 1 if chosen else 0
+            if used_chars + cost + separator_cost > config.max_chars:
                 continue
             overlap = len(covered_terms & set(matched)) / max(1, len(matched))
             adjusted = score - config.diversity_penalty * overlap
@@ -203,7 +204,7 @@ def retrieve(context: str, query: str, config: RetrievalConfig | None = None) ->
             break
         item = remaining.pop(best_pos)
         chosen.append(item)
-        used_chars += len(item[1].text)
+        used_chars += len(item[1].text) + (1 if len(chosen) > 1 else 0)
         covered_terms.update(item[2])
 
     chosen.sort(key=lambda item: item[1].index)
