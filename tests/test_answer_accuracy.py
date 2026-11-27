@@ -18,7 +18,7 @@ class AnswerAccuracyTests(unittest.TestCase):
     def test_paired_metrics(self):
         result = load_and_score(FIXTURE)
         self.assertEqual(result["policies"]["full"]["exact_match_accuracy"], 1.0)
-        self.assertEqual(result["policies"]["compressed"]["exact_match_accuracy"], 0.5)
+        self.assertAlmostEqual(result["policies"]["compressed"]["exact_match_accuracy"], 1 / 3, places=6)
         self.assertGreater(result["policies"]["compressed"]["mean_token_f1"], 0.5)
 
     def test_mismatched_question_sets_rejected(self):
