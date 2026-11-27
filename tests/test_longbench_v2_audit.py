@@ -66,10 +66,10 @@ class LongBenchAuditTests(unittest.TestCase):
         ]
         result = run_baseline(rows, FakeTokenizer(), sample_size=2, seed=2026,
                               top_k=1, chunk_chars=20, overlap_chars=2)
-        self.assertEqual(result["examples_evaluated"], 3)
+        self.assertEqual(result["dataset_examples"], 3)
         self.assertEqual(result["sample_size"], 2)
-        self.assertIsNone(result["answer_accuracy"])
-        self.assertEqual(len(result["sampled_examples"]), 2)
+        self.assertIsNone(result["answer_accuracy"])\n        self.assertIn("context_token_reduction_fraction", result["sampled_rows"])
+        self.assertEqual(len(result["sampled_rows"]["examples"]), 2)
 
 
 if __name__ == "__main__":
