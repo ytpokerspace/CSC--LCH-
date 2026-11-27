@@ -168,7 +168,9 @@ def run_baseline(rows: list[dict[str, Any]], tokenizer, sample_size: int,
     rng = random.Random(seed)
     sample_indices = set(rng.sample(range(len(rows)), min(sample_size, len(rows))))
     full_tokens = retrieved_tokens = 0
+    sample_full_tokens = sample_retrieved_tokens = 0
     coverage_values = []
+    sample_coverage_values = []
     sample_details = []
     for index, row in enumerate(rows):
         context = row["context"]
@@ -181,6 +183,9 @@ def run_baseline(rows: list[dict[str, Any]], tokenizer, sample_size: int,
         retrieved_tokens += retrieved_count
         coverage_values.append(coverage)
         if index in sample_indices:
+            sample_full_tokens += full_count
+            sample_retrieved_tokens += retrieved_count
+            sample_coverage_values.append(coverage)
             sample_details.append({
                 "row_index": index,
                 "question_id": row["_id"],
@@ -195,22 +200,36 @@ def run_baseline(rows: list[dict[str, Any]], tokenizer, sample_size: int,
                 "query_term_coverage_proxy": round(coverage, 6),
             })
     reduction = 1 - (retrieved_tokens / full_tokens) if full_tokens else 0.0
+    sample_reduction = (
+        1 - (sample_retrieved_tokens / sample_full_tokens)
+        if sample_full_tokens else 0.0
+    )
     return {
         "protocol": "csc_lch_longbench_v2_lexical_baseline_v1",
-        "examples_evaluated": len(rows),
-        "sample_size": len(sample_details),
+        "dataset_examples": len(rows),
+        "sample_examples_evaluated": len(sample_details),
         "sample_seed": seed,
         "top_k_chunks": top_k,
         "chunk_chars": chunk_chars,
         "overlap_chars": overlap_chars,
         "tokenizer": "cl100k_base",
-        "total_full_context_tokens": full_tokens,
-        "total_retrieved_context_tokens": retrieved_tokens,
-        "context_token_reduction_fraction": round(reduction, 6),
-        "mean_query_term_coverage_proxy": round(
-            sum(coverage_values) / len(coverage_values), 6
-        ) if coverage_values else None,
-        "sampled_examples": sorted(sample_details, key=lambda x: x["row_index"]),
+        "all_rows": {
+            "full_context_tokens": full_tokens,
+            "retrieved_context_tokens": retrieved_tokens,
+            "context_token_reduction_fraction": round(reduction, 6),
+            "mean_query_term_coverage_proxy": round(
+                sum(coverage_values) / len(coverage_values), 6
+            ) if coverage_values else None,
+        },
+        "sampled_rows": {
+            "full_context_tokens": sample_full_tokens,
+            "retrieved_context_tokens": sample_retrieved_tokens,
+            "context_token_reduction_fraction": round(sample_reduction, 6),
+            "mean_query_term_coverage_proxy": round(
+                sum(sample_coverage_values) / len(sample_coverage_values), 6
+            ) if sample_coverage_values else None,
+            "examples": sorted(sample_details, key=lambda x: x["row_index"]),
+        },
         "answer_accuracy": None,
         "answer_accuracy_note": (
             "Not measured: this script does not generate answers or run model inference. "
