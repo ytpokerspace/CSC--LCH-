@@ -25,6 +25,7 @@ STOPWORDS = {
     "has", "have", "how", "in", "into", "is", "it", "its", "of", "on", "or",
     "that", "the", "their", "there", "this", "to", "was", "what", "when",
     "where", "which", "who", "why", "will", "with", "would", "you", "your",
+    "about",
 }
 
 
