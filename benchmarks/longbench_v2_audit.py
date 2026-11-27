@@ -118,7 +118,14 @@ def make_chunks(text: str, chunk_chars: int, overlap_chars: int) -> list[str]:
     if not text:
         return [""]
     stride = chunk_chars - overlap_chars
-    return [text[start:start + chunk_chars] for start in range(0, len(text), stride)]
+    chunks = []
+    start = 0
+    while start < len(text):
+        chunks.append(text[start:start + chunk_chars])
+        if start + chunk_chars >= len(text):
+            break
+        start += stride
+    return chunks
 
 def lexical_retrieve(context: str, question: str, top_k: int,
                      chunk_chars: int, overlap_chars: int) -> tuple[str, float, int]:
