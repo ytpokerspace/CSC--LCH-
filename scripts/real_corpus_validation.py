@@ -21,7 +21,7 @@ from csc_lch_bench import Seg, build_variants, join  # noqa: E402
 
 SOURCES = [
     ROOT / "README.md",
-    ROOT / "benchmarks" / "benchmarks/milestone6_report.md",
+    ROOT / "benchmarks" / "milestone6_report.md",
     ROOT / "ARAF" / "README.md",
 ]
 
@@ -40,7 +40,7 @@ QUESTIONS = [
     ("Q11", "workload limitation", "nor workload will benefit", "README.md"),
     ("Q12", "author attribution", "William Gunnell Cox", "README.md"),
     ("Q13", "retrieval principle", "Retrieve only what's needed, when it's needed.", "benchmarks/milestone6_report.md"),
-    ("Q14", "provisional operating policy", "T4: provisional default pending full-cost measurements.", "benchmarks/milestone6_report.md"),
+    ("Q14", "provisional operating policy", "provisional default pending full-cost measurements.", "benchmarks/milestone6_report.md"),
 ]
 
 def sha256(data: bytes) -> str:
@@ -58,7 +58,7 @@ def tier_for(section: str, source_name: str) -> int:
     }
     if section in critical:
         return 1
-    if source_name == "benchmarks/milestone6_report.md" and section in {
+    if source_name == "milestone6_report.md" and section in {
         "Reported ablation results", "Interpretation", "Provisional policy guidance"
     }:
         return 4
