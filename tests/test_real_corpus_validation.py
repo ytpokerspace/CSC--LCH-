@@ -14,19 +14,19 @@ import real_corpus_validation as validation  # noqa: E402
 
 class IntegrityTests(unittest.TestCase):
     def test_source_archive_reconstructs_exact_bytes(self):
-        original = b"# Heading\\r\\n\\r\\nUnicode: caf\\xc3\\xa9\\nLast line"
+        original = b"# Heading" + bytes([13, 10, 13, 10]) + "Unicode: café".encode("utf-8") + bytes([10]) + b"Last line"
         chunks = validation.archive_source(original)
         self.assertEqual(validation.reconstruct_source(chunks, validation.sha256(original)), original)
 
     def test_source_archive_rejects_corrupted_chunk(self):
-        original = b"first\\n\\nsecond\\n"
+        original = b"first" + bytes([10, 10]) + b"second"
         chunks = validation.archive_source(original)
         chunks[0]["data"] += b"corruption"
         with self.assertRaisesRegex(ValueError, "chunk SHA-256 mismatch"):
             validation.reconstruct_source(chunks, validation.sha256(original))
 
     def test_source_archive_rejects_missing_chunk(self):
-        original = b"first\\n\\nsecond"
+        original = b"first" + bytes([10, 10]) + b"second"
         chunks = validation.archive_source(original)
         chunks.pop(1)
         with self.assertRaisesRegex(ValueError, "incomplete or duplicated"):
