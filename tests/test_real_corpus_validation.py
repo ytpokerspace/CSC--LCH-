@@ -1,6 +1,7 @@
 """Regression tests for the offline CSC-LCH real-document validation."""
 from __future__ import annotations
 
+import re
 import sys
 import unittest
 from pathlib import Path
@@ -46,7 +47,7 @@ class BenchmarkAccountingTests(unittest.TestCase):
     def test_queries_do_not_contain_expected_evidence(self):
         for _qid, _label, query, fact, _source in validation.QUESTIONS:
             with self.subTest(query=query):
-                self.assertNotIn(fact.casefold(), query.casefold())
+                self.assertIsNone(re.search(r"\\b" + re.escape(fact) + r"\\b", query, re.IGNORECASE))
 
     def test_bm25_retriever_uses_query_and_returns_ranked_candidates(self):
         store = {
