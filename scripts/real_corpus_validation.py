@@ -35,12 +35,12 @@ QUESTIONS = [
     ("Q06", "inference marker", "INF", "README.md"),
     ("Q07", "speculation marker", "SPEC", "README.md"),
     ("Q08", "latency limitation", "Hydration-call counts alone do not establish latency or cost.", "milestone6_report.md"),
-    ("Q09", "semantic fidelity limitation", "does not establish universal semantic fidelity", "README.md"),
+    ("Q09", "experiment evidence requirement", "Treat performance numbers as established only when the corresponding experiment has been run and its method and evidence are available.", "README.md"),
     ("Q10", "offline evaluation constraint", "Do not make paid API calls in the default workflow.", "milestone6_report.md"),
     ("Q11", "workload limitation", "nor workload will benefit", "README.md"),
     ("Q12", "author attribution", "William Gunnell Cox", "README.md"),
     ("Q13", "retrieval principle", "Retrieve only what's needed, when it's needed.", "milestone6_report.md"),
-    ("Q14", "human authority", "human_operator", "milestone6_report.md"),
+    ("Q14", "provisional operating policy", "T4: provisional default pending full-cost measurements.", "milestone6_report.md"),
 ]
 
 def sha256(data: bytes) -> str:
