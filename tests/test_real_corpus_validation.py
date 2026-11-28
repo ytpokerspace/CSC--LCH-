@@ -13,6 +13,25 @@ import real_corpus_validation as validation  # noqa: E402
 
 
 class IntegrityTests(unittest.TestCase):
+    def test_source_archive_reconstructs_exact_bytes(self):
+        original = b"# Heading\\r\\n\\r\\nUnicode: caf\\xc3\\xa9\\nLast line"
+        chunks = validation.archive_source(original)
+        self.assertEqual(validation.reconstruct_source(chunks, validation.sha256(original)), original)
+
+    def test_source_archive_rejects_corrupted_chunk(self):
+        original = b"first\\n\\nsecond\\n"
+        chunks = validation.archive_source(original)
+        chunks[0]["data"] += b"corruption"
+        with self.assertRaisesRegex(ValueError, "chunk SHA-256 mismatch"):
+            validation.reconstruct_source(chunks, validation.sha256(original))
+
+    def test_source_archive_rejects_missing_chunk(self):
+        original = b"first\\n\\nsecond"
+        chunks = validation.archive_source(original)
+        chunks.pop(1)
+        with self.assertRaisesRegex(ValueError, "incomplete or duplicated"):
+            validation.reconstruct_source(chunks, validation.sha256(original))
+
     def test_hydration_accepts_original_content(self):
         text = "Archived evidence: 1.40×"
         hashes = {"doc001": validation.sha256(text.encode("utf-8"))}
@@ -37,12 +56,18 @@ class IntegrityTests(unittest.TestCase):
 class BenchmarkAccountingTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
-        (cls.segments, cls.source_hashes, cls.evidence_text,
-         cls.segment_hashes) = validation.load_real_documents()
+        (cls.segments, cls.source_hashes, cls.source_archives,
+         cls.evidence_text, cls.segment_hashes) = validation.load_real_documents()
         for _qid, _label, _query, fact, source in validation.QUESTIONS:
             if fact.casefold() not in cls.evidence_text[source].casefold():
                 raise AssertionError(f"Fixture evidence missing from {source}: {fact!r}")
         cls.baseline = validation.join(cls.segments)
+
+    def test_all_repository_sources_reconstruct_byte_exactly(self):
+        for source, chunks in self.source_archives.items():
+            with self.subTest(source=source):
+                rebuilt = validation.reconstruct_source(chunks, self.source_hashes[source])
+                self.assertEqual(validation.sha256(rebuilt), self.source_hashes[source])
 
     def test_queries_do_not_contain_expected_evidence(self):
         for _qid, _label, query, fact, _source in validation.QUESTIONS:
