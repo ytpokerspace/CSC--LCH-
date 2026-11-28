@@ -201,18 +201,22 @@ def main():
         "scope": "Offline evaluation on the project's actual README and research documentation; not an external corpus or LLM task benchmark.",
         "method": {
             "implementation": "csc_lch_bench.py build_variants; no-glyph path isolates deduplication, safe text compression, and lazy deferral.",
-            "retrieval": "Exact-evidence oracle hydrates a deferred source segment when it contains the required evidence.",
+            "retrieval": "ORACLE / UPPER-BOUND ONLY: scans every deferred paragraph for the exact required evidence string, then hydrates every matching paragraph. It has direct access to the expected answer and does not model query understanding, candidate ranking, ambiguity, or retrieval misses.",
+            "retrieval_mode": "exact_substring_oracle_upper_bound",
+            "tier_assignment": "CURATED FIXTURE: tier_for() assigns tiers from a hand-authored section-name map. This is not an automatic tier classifier and must not be presented as production classification performance.",
             "baseline": "Full uncompressed source context repeated for each of the same 15 evidence questions.",
             "accounting": "Lexical units are a tokenizer-independent proxy, not actual model tokens. Active context and registry instructions are counted for every question; each answer is assigned 8 output units; each hydration prompt is assigned 12 units; retrieved source text is counted separately.",
-            "integrity": "Each deferred segment is verified at hydration against SHA-256 of its original UTF-8 source paragraph; mismatches fail reconstruction.",
+            "integrity": "Each hydrated deferred paragraph is verified against SHA-256 of its original UTF-8 paragraph. Source-file SHA-256 values are recorded as fingerprints; this experiment does not prove byte-for-byte reconstruction of whole source files from the tiered segments.",
             "tier_coverage": "The historical reported-ablation table is explicitly classified as T5 archive content and Q15 requires retrieval of its 1.40x result.",
+            "evidence_recall_interpretation": "Oracle evidence recovery is an upper-bound fixture check, not semantic answer accuracy, realistic retrieval recall, or end-to-end task quality.",
             "limitations": [
                 "No LLM inference or semantic answer scoring.",
                 "Exact-match oracle retrieval is an upper bound, not a realistic retriever.",
+                "Tier assignment is curated by section name, not predicted by a classifier.",
                 "Lexical units are not model tokenizer tokens.",
                 "Corpus is real project documentation but small and in-domain.",
                 "No provider latency, energy, or monetary cost is measured.",
-            "The exact-evidence oracle is intentionally optimistic and does not model retrieval ranking errors."
+                "Whole-file byte-for-byte reconstruction is not tested by this experiment."
             ]
         },
         "commit_sha": os.environ.get("GITHUB_SHA", "local-unpinned"),
