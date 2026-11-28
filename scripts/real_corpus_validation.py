@@ -1,9 +1,8 @@
 #!/usr/bin/env python3
-"""Offline paired CSC-LCH validation on the repository's real project documents.
+"""Offline CSC-LCH validation on real project documents with independent retrieval.
 
-No model/API calls. Retrieval is an exact-evidence oracle: this measures whether
-required source evidence remains visible or can be recovered from deferred stubs.
-It does NOT measure semantic answer quality or real tokenizer usage.
+No model/API calls. BM25 retrieval sees only the query and deferred paragraphs;
+expected evidence is used only for scoring. Lexical units are not model tokens.
 """
 from __future__ import annotations
 
@@ -48,6 +47,32 @@ QUESTIONS = [
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
 
+def split_preserving_bytes(raw: bytes) -> list[bytes]:
+    """Split at blank-line boundaries without discarding a single source byte."""
+    return [part for part in re.split(rb"(\\r?\\n[ \\t]*\\r?\\n)", raw) if part]
+
+
+def archive_source(raw: bytes) -> list[dict]:
+    """Create ordered, independently hashed cold-storage chunks for one source file."""
+    return [
+        {"index": index, "data": chunk, "sha256": sha256(chunk)}
+        for index, chunk in enumerate(split_preserving_bytes(raw))
+    ]
+
+
+def reconstruct_source(chunks: list[dict], expected_sha256: str) -> bytes:
+    """Reassemble exact source bytes; reject missing, reordered, or corrupted chunks."""
+    ordered = sorted(chunks, key=lambda item: item["index"])
+    if [item["index"] for item in ordered] != list(range(len(ordered))):
+        raise ValueError("Source archive chunk sequence is incomplete or duplicated")
+    for item in ordered:
+        if sha256(item["data"]) != item["sha256"]:
+            raise ValueError(f"Source archive chunk SHA-256 mismatch at index {item['index']}")
+    rebuilt = b"".join(item["data"] for item in ordered)
+    if sha256(rebuilt) != expected_sha256:
+        raise ValueError("Reconstructed source file SHA-256 mismatch")
+    return rebuilt
+
 
 def hydrate_verified(segment_id: str, store: dict[str, str], expected_hashes: dict[str, str]) -> str:
     """Retrieve deferred text only when its UTF-8 bytes match the source SHA-256."""
@@ -86,12 +111,17 @@ def tier_for(section: str, source_name: str) -> int:
 def load_real_documents():
     segments = []
     source_hashes = {}
+    source_archives = {}
     evidence_text = {}
     segment_hashes = {}
     counter = 0
     for path in SOURCES:
         raw = path.read_bytes()
-        source_hashes[str(path.relative_to(ROOT))] = sha256(raw)
+        source_name = str(path.relative_to(ROOT))
+        source_hashes[source_name] = sha256(raw)
+        source_archives[source_name] = archive_source(raw)
+        # Fail closed if the immutable cold archive cannot reproduce source bytes.
+        reconstruct_source(source_archives[source_name], source_hashes[source_name])
         text = raw.decode("utf-8")
         evidence_text[str(path.relative_to(ROOT))] = text
         section = ""
@@ -107,7 +137,7 @@ def load_real_documents():
             segment_id = f"doc{counter:03d}"
             segments.append(Seg(segment_id, tier_for(section, path.name), block))
             segment_hashes[segment_id] = sha256(block.encode("utf-8"))
-    return segments, source_hashes, evidence_text, segment_hashes
+    return segments, source_hashes, source_archives, evidence_text, segment_hashes
 
 def retrieval_terms(text: str) -> list[str]:
     """Normalize query/document text using a small deterministic lexical tokenizer."""
@@ -228,7 +258,7 @@ def evaluate_policy(name, segments, defer_from, baseline_context, expected, segm
     }
 
 def main():
-    segments, source_hashes, evidence_text, segment_hashes = load_real_documents()
+    segments, source_hashes, source_archives, evidence_text, segment_hashes = load_real_documents()
     for qid, label, query, fact, source in QUESTIONS:
         if fact.casefold() not in evidence_text[source].casefold():
             raise SystemExit(f"Evidence fixture {qid} not found in {source}: {fact!r}")
@@ -241,9 +271,21 @@ def main():
         evaluate_policy("T5", segments, 5, baseline_context, QUESTIONS, segment_hashes),
     ]
     baseline_recall = 1.0
+    archive_report = {}
+    source_reconstruction_failures = 0
+    for source_name, chunks in source_archives.items():
+        try:
+            rebuilt = reconstruct_source(chunks, source_hashes[source_name])
+            archive_report[source_name] = {
+                "chunks": len(chunks), "archived_bytes": sum(len(x["data"]) for x in chunks),
+                "reconstructed_sha256": sha256(rebuilt), "byte_exact_round_trip": True,
+            }
+        except ValueError:
+            source_reconstruction_failures += 1
+            archive_report[source_name] = {"chunks": len(chunks), "byte_exact_round_trip": False}
     report = {
         "schema_version": 1,
-        "status": "PASS" if all(p["evidence_recall"] == baseline_recall and p["reconstruction_failures"] == 0 for p in policies) else "REVIEW",
+        "status": "PASS" if all(p["evidence_recall"] == baseline_recall and p["reconstruction_failures"] == 0 for p in policies) and source_reconstruction_failures == 0 else "REVIEW",
         "data_status": "REAL_REPOSITORY_DOCUMENTS_DETERMINISTIC_EVIDENCE_TEST",
         "scope": "Offline evaluation on the project's actual README and research documentation; not an external corpus or LLM task benchmark.",
         "method": {
@@ -264,12 +306,14 @@ def main():
                 "Lexical units are not model tokenizer tokens.",
                 "Corpus is real project documentation but small and in-domain.",
                 "No provider latency, energy, or monetary cost is measured.",
-                "Whole-file byte-for-byte reconstruction is not tested by this experiment."
+                "The byte-exact source archive is a separate cold-storage layer; optimized tier text is not itself a byte-for-byte file representation."
             ]
         },
         "commit_sha": os.environ.get("GITHUB_SHA", "local-unpinned"),
         "corpus_sha256": corpus_hash,
         "source_sha256": source_hashes,
+        "source_archive": archive_report,
+        "source_reconstruction_failures": source_reconstruction_failures,
         "source_paragraphs": len(segments),
         "source_paragraphs_by_tier": {f"T{tier}": sum(1 for seg in segments if seg.tier == tier) for tier in range(6)},
         "source_lexical_units": lexical_units(baseline_context),
