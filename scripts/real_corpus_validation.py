@@ -37,7 +37,7 @@ QUESTIONS = [
     ("Q08", "latency limitation", "Hydration-call counts alone do not establish latency or cost.", "benchmarks/milestone6_report.md"),
     ("Q09", "experiment evidence requirement", "Treat performance numbers as established only when the corresponding experiment has been run and its method and evidence are available.", "README.md"),
     ("Q10", "offline evaluation constraint", "Do not make paid API calls in the default workflow.", "benchmarks/milestone6_report.md"),
-    ("Q11", "workload limitation", "nor workload will benefit", "README.md"),
+    ("Q11", "workload limitation", "every LLM or workload will benefit", "README.md"),
     ("Q12", "author attribution", "William Gunnell Cox", "README.md"),
     ("Q13", "retrieval principle", "Retrieve only what's needed, when it's needed.", "benchmarks/milestone6_report.md"),
     ("Q14", "provisional operating policy", "provisional default pending full-cost measurements.", "benchmarks/milestone6_report.md"),
