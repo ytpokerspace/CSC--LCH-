@@ -1,0 +1,34 @@
+name: CSC-LCH real-document validation
+
+on:
+  push:
+    branches:
+      - research/real-corpus-validation-2026-11
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  real-document-validation:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run offline unit tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
+      - name: Run real-document CSC-LCH comparison
+        run: python scripts/real_corpus_validation.py
+      - name: Upload reproducible report
+        uses: actions/upload-artifact@v4
+        with:
+          name: csc-lch-real-document-validation
+          path: artifacts/real_corpus_validation.json
+          if-no-files-found: error
