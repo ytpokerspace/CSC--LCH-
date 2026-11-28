@@ -39,7 +39,7 @@ QUESTIONS = [
     ("Q10", "offline evaluation constraint", "Do not make paid API calls in the default workflow.", "benchmarks/milestone6_report.md"),
     ("Q11", "workload limitation", "every LLM or workload will benefit", "README.md"),
     ("Q12", "author attribution", "William Gunnell Cox", "README.md"),
-    ("Q13", "retrieval principle", "Retrieve only what's needed, when it's needed.", "benchmarks/milestone6_report.md"),
+    ("Q13", "retrieval principle", "When a query requires deferred information, resolve the stub and retrieve the original source content.", "benchmarks/milestone6_report.md"),
     ("Q14", "provisional operating policy", "provisional default pending full-cost measurements.", "benchmarks/milestone6_report.md"),
 ]
 
