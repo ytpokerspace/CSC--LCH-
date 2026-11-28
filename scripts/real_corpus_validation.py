@@ -41,10 +41,24 @@ QUESTIONS = [
     ("Q12", "author attribution", "William Gunnell Cox", "README.md"),
     ("Q13", "retrieval principle", "When a query requires deferred information, resolve the stub and retrieve the original source content.", "benchmarks/milestone6_report.md"),
     ("Q14", "provisional operating policy", "provisional default pending full-cost measurements.", "benchmarks/milestone6_report.md"),
+    ("Q15", "archived T3 ablation result", "1.40×", "benchmarks/milestone6_report.md"),
 ]
 
 def sha256(data: bytes) -> str:
     return hashlib.sha256(data).hexdigest()
+
+
+def hydrate_verified(segment_id: str, store: dict[str, str], expected_hashes: dict[str, str]) -> str:
+    """Retrieve deferred text only when its UTF-8 bytes match the source SHA-256."""
+    if segment_id not in store:
+        raise KeyError(f"Deferred segment not found: {segment_id}")
+    if segment_id not in expected_hashes:
+        raise KeyError(f"No source integrity hash for deferred segment: {segment_id}")
+    text = store[segment_id]
+    actual_hash = sha256(text.encode("utf-8"))
+    if actual_hash != expected_hashes[segment_id]:
+        raise ValueError(f"SHA-256 mismatch for deferred segment: {segment_id}")
+    return text
 
 def lexical_units(text: str) -> int:
     """Tokenizer-independent lexical proxy; NOT model tokens."""
@@ -58,8 +72,12 @@ def tier_for(section: str, source_name: str) -> int:
     }
     if section in critical:
         return 1
+    # The historical, explicitly reported ablation table is archive material.
+    # This places genuine repository content in T5 so the archive path is exercised.
+    if source_name == "milestone6_report.md" and section == "Reported ablation results":
+        return 5
     if source_name == "milestone6_report.md" and section in {
-        "Reported ablation results", "Interpretation", "Provisional policy guidance"
+        "Interpretation", "Provisional policy guidance"
     }:
         return 4
     return 3
@@ -68,6 +86,7 @@ def load_real_documents():
     segments = []
     source_hashes = {}
     evidence_text = {}
+    segment_hashes = {}
     counter = 0
     for path in SOURCES:
         raw = path.read_bytes()
@@ -84,10 +103,12 @@ def load_real_documents():
                 continue
             # Keep source paragraphs intact; the heading determines an explicit tier.
             counter += 1
-            segments.append(Seg(f"doc{counter:03d}", tier_for(section, path.name), block))
-    return segments, source_hashes, evidence_text
+            segment_id = f"doc{counter:03d}"
+            segments.append(Seg(segment_id, tier_for(section, path.name), block))
+            segment_hashes[segment_id] = sha256(block.encode("utf-8"))
+    return segments, source_hashes, evidence_text, segment_hashes
 
-def evaluate_policy(name, segments, defer_from, baseline_context, expected):
+def evaluate_policy(name, segments, defer_from, baseline_context, expected, segment_hashes):
     start = time.perf_counter()
     built = build_variants(segments, {}, {}, defer_from)
     variant = built["variants"]["noglyph"]
@@ -96,7 +117,7 @@ def evaluate_policy(name, segments, defer_from, baseline_context, expected):
     build_ms = (time.perf_counter() - start) * 1000.0
 
     traces = []
-    total_active = total_hydration_prompt = total_retrieved = total_output = 0
+    total_active = total_registry = total_hydration_prompt = total_retrieved = total_output = 0
     recovered = 0
     reconstruction_failures = 0
     hydration_calls = 0
@@ -107,38 +128,44 @@ def evaluate_policy(name, segments, defer_from, baseline_context, expected):
         hydrated_ids = []
         recovered_text = []
         if not active_has:
-            for sid, original in store.items():
-                if fact.casefold() in original.casefold():
-                    hydrated_ids.append(sid)
-                    recovered_text.append(original)
-        found = active_has or bool(recovered_text)
+            # Exact-evidence oracle selects candidates; hydration itself verifies
+            # the retrieved bytes against the source-segment SHA-256.
+            candidates = [sid for sid, original in store.items()
+                          if fact.casefold() in original.casefold()]
+            for sid in candidates:
+                hydrated_ids.append(sid)
+                try:
+                    recovered_text.append(hydrate_verified(sid, store, segment_hashes))
+                except (KeyError, ValueError):
+                    reconstruction_failures += 1
+        found = active_has or any(fact.casefold() in text.casefold() for text in recovered_text)
         if found:
             recovered += 1
         hydration_calls += len(hydrated_ids)
         total_active += lexical_units(active)
+        registry_units = lexical_units(variant["registry"])
+        total_registry += registry_units
         total_hydration_prompt += 12 * len(hydrated_ids)
         total_retrieved += sum(lexical_units(x) for x in recovered_text)
         total_output += 8
-        # The stored value must be byte-for-byte the original deduplicated segment.
-        for sid in hydrated_ids:
-            source_original = next((s.text for s in segments if s.id == sid), None)
-            if source_original != store[sid]:
-                reconstruction_failures += 1
         traces.append({
             "question_id": qid, "evidence_label": label, "evidence": fact,
             "visible_without_hydration": active_has,
             "hydrated_entry_ids": hydrated_ids,
+            "registry_lexical_units": registry_units,
+            "hydrated_sha256_verified": [sid for sid in hydrated_ids if sid in segment_hashes and sha256(store[sid].encode("utf-8")) == segment_hashes[sid]],
             "evidence_recovered": found,
             "retrieval_elapsed_ms": round((time.perf_counter() - q_start) * 1000, 4),
         })
 
     baseline_per_task = lexical_units(baseline_context) + 8
     baseline_total = baseline_per_task * len(QUESTIONS)
-    policy_total = total_active + total_hydration_prompt + total_retrieved + total_output
+    policy_total = total_active + total_registry + total_hydration_prompt + total_retrieved + total_output
     return {
         "policy": name, "defer_from_tier": defer_from, "observations": len(QUESTIONS),
         "baseline_total_lexical_units": baseline_total,
         "policy_active_lexical_units": total_active,
+        "registry_lexical_units": total_registry,
         "hydration_prompt_lexical_units": total_hydration_prompt,
         "retrieved_lexical_units": total_retrieved,
         "output_lexical_units": total_output,
@@ -154,7 +181,7 @@ def evaluate_policy(name, segments, defer_from, baseline_context, expected):
     }
 
 def main():
-    segments, source_hashes, evidence_text = load_real_documents()
+    segments, source_hashes, evidence_text, segment_hashes = load_real_documents()
     for qid, label, fact, source in QUESTIONS:
         if fact.casefold() not in evidence_text[source].casefold():
             raise SystemExit(f"Evidence fixture {qid} not found in {source}: {fact!r}")
@@ -162,9 +189,9 @@ def main():
     baseline_context = join(segments)
     corpus_hash = sha256(baseline_context.encode("utf-8"))
     policies = [
-        evaluate_policy("T3", segments, 3, baseline_context, QUESTIONS),
-        evaluate_policy("T4", segments, 4, baseline_context, QUESTIONS),
-        evaluate_policy("T5", segments, 5, baseline_context, QUESTIONS),
+        evaluate_policy("T3", segments, 3, baseline_context, QUESTIONS, segment_hashes),
+        evaluate_policy("T4", segments, 4, baseline_context, QUESTIONS, segment_hashes),
+        evaluate_policy("T5", segments, 5, baseline_context, QUESTIONS, segment_hashes),
     ]
     baseline_recall = 1.0
     report = {
@@ -176,13 +203,16 @@ def main():
             "implementation": "csc_lch_bench.py build_variants; no-glyph path isolates deduplication, safe text compression, and lazy deferral.",
             "retrieval": "Exact-evidence oracle hydrates a deferred source segment when it contains the required evidence.",
             "baseline": "Full uncompressed source context repeated for each of the same 14 evidence questions.",
-            "accounting": "Lexical units are a tokenizer-independent proxy, not actual model tokens. Each answer is assigned 8 output units; each hydration prompt is assigned 12 units.",
+            "accounting": "Lexical units are a tokenizer-independent proxy, not actual model tokens. Active context and registry instructions are counted for every question; each answer is assigned 8 output units; each hydration prompt is assigned 12 units; retrieved source text is counted separately.",
+            "integrity": "Each deferred segment is verified at hydration against SHA-256 of its original UTF-8 source paragraph; mismatches fail reconstruction.",
+            "tier_coverage": "The historical reported-ablation table is explicitly classified as T5 archive content and Q15 requires retrieval of its 1.40x result.",
             "limitations": [
                 "No LLM inference or semantic answer scoring.",
                 "Exact-match oracle retrieval is an upper bound, not a realistic retriever.",
                 "Lexical units are not model tokenizer tokens.",
                 "Corpus is real project documentation but small and in-domain.",
-                "No provider latency, energy, or monetary cost is measured."
+                "No provider latency, energy, or monetary cost is measured.",
+            "The exact-evidence oracle is intentionally optimistic and does not model retrieval ranking errors."
             ]
         },
         "commit_sha": os.environ.get("GITHUB_SHA", "local-unpinned"),
@@ -202,7 +232,7 @@ def main():
     out.write_text(json.dumps(report, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(json.dumps(report, indent=2, ensure_ascii=False))
     print(f"\nWrote {out.relative_to(ROOT)}")
-    return 0 if report["status"] == "PASS" else 1
+    return 0 if report["status"] == "PASS" and all(p["stubs_created"] > 0 and p["registry_lexical_units"] > 0 for p in policies) and policies[-1]["hydration_calls"] > 0 else 1
 
 if __name__ == "__main__":
     raise SystemExit(main())
