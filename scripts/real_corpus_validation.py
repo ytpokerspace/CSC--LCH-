@@ -26,22 +26,23 @@ SOURCES = [
 ]
 
 # Evidence strings are exact, auditable claims drawn from the frozen source files.
+# Queries are independent of expected evidence: the retriever never receives the answer key.
 QUESTIONS = [
-    ("Q01", "project license", "GPL-3.0-or-later", "README.md"),
-    ("Q02", "source authority", "The source remains the authority.", "benchmarks/milestone6_report.md"),
-    ("Q03", "projection limitation", "Projected savings are not measured savings.", "README.md"),
-    ("Q04", "paired corpus control", "Use the same frozen corpus and question set for each policy.", "benchmarks/milestone6_report.md"),
-    ("Q05", "evidence marker", "OBS", "README.md"),
-    ("Q06", "inference marker", "INF", "README.md"),
-    ("Q07", "speculation marker", "SPEC", "README.md"),
-    ("Q08", "latency limitation", "Hydration-call counts alone do not establish latency or cost.", "benchmarks/milestone6_report.md"),
-    ("Q09", "experiment evidence requirement", "Treat performance numbers as established only when the corresponding experiment has been run and its method and evidence are available.", "README.md"),
-    ("Q10", "offline evaluation constraint", "Do not make paid API calls in the default workflow.", "benchmarks/milestone6_report.md"),
-    ("Q11", "workload limitation", "every LLM or workload will benefit", "README.md"),
-    ("Q12", "author attribution", "William Gunnell Cox", "README.md"),
-    ("Q13", "retrieval principle", "When a query requires deferred information, resolve the stub and retrieve the original source content.", "benchmarks/milestone6_report.md"),
-    ("Q14", "provisional operating policy", "provisional default pending full-cost measurements.", "benchmarks/milestone6_report.md"),
-    ("Q15", "archived T3 ablation result", "1.40×", "benchmarks/milestone6_report.md"),
+    ("Q01", "project license", "What license governs this project?", "GPL-3.0-or-later", "README.md"),
+    ("Q02", "source authority", "Which record is authoritative when a summary conflicts with the source?", "The source remains the authority.", "benchmarks/milestone6_report.md"),
+    ("Q03", "projection limitation", "Are projected efficiency gains equivalent to measured results?", "Projected savings are not measured savings.", "README.md"),
+    ("Q04", "paired corpus control", "What must remain identical when comparing tier policies?", "Use the same frozen corpus and question set for each policy.", "benchmarks/milestone6_report.md"),
+    ("Q05", "evidence marker", "Which marker denotes an observed fact?", "OBS", "README.md"),
+    ("Q06", "inference marker", "Which marker denotes an inference?", "INF", "README.md"),
+    ("Q07", "speculation marker", "Which marker denotes speculation?", "SPEC", "README.md"),
+    ("Q08", "latency limitation", "Do retrieval counts alone prove the system is faster or cheaper?", "Hydration-call counts alone do not establish latency or cost.", "benchmarks/milestone6_report.md"),
+    ("Q09", "experiment evidence requirement", "What evidence is required before treating a performance claim as established?", "Treat performance numbers as established only when the corresponding experiment has been run and its method and evidence are available.", "README.md"),
+    ("Q10", "offline evaluation constraint", "What is the default workflow rule for paid API usage?", "Do not make paid API calls in the default workflow.", "benchmarks/milestone6_report.md"),
+    ("Q11", "workload limitation", "Does the framework guarantee benefits for every model and workload?", "every LLM or workload will benefit", "README.md"),
+    ("Q12", "author attribution", "Who is credited as the framework author?", "William Gunnell Cox", "README.md"),
+    ("Q13", "retrieval principle", "What should happen when a question needs information that is not in active context?", "When a query requires deferred information, resolve the stub and retrieve the original source content.", "benchmarks/milestone6_report.md"),
+    ("Q14", "provisional operating policy", "Which tier policy is currently recommended provisionally?", "provisional default pending full-cost measurements.", "benchmarks/milestone6_report.md"),
+    ("Q15", "archived T3 ablation result", "What compression ratio was reported for the T3 ablation?", "1.40×", "benchmarks/milestone6_report.md"),
 ]
 
 def sha256(data: bytes) -> str:
@@ -108,6 +109,51 @@ def load_real_documents():
             segment_hashes[segment_id] = sha256(block.encode("utf-8"))
     return segments, source_hashes, evidence_text, segment_hashes
 
+def retrieval_terms(text: str) -> list[str]:
+    """Normalize query/document text using a small deterministic lexical tokenizer."""
+    stop = {"a", "an", "and", "are", "as", "at", "be", "by", "does", "for", "from",
+            "how", "in", "is", "it", "of", "on", "or", "the", "this", "to", "what",
+            "when", "which", "who", "with"}
+    return [token for token in re.findall(r"[a-z0-9]+", text.casefold())
+            if token not in stop]
+
+
+def retrieve_bm25(query: str, store: dict[str, str], top_k: int = 3) -> list[tuple[str, float]]:
+    """Rank deferred paragraphs from query text alone; no expected-answer access."""
+    if top_k < 1:
+        raise ValueError("top_k must be at least 1")
+    query_tokens = retrieval_terms(query)
+    if not query_tokens or not store:
+        return []
+    docs = {sid: retrieval_terms(text) for sid, text in store.items()}
+    n_docs = len(docs)
+    avg_len = sum(len(tokens) for tokens in docs.values()) / n_docs
+    if avg_len == 0:
+        return []
+    doc_freq = {}
+    for tokens in docs.values():
+        for term in set(tokens):
+            doc_freq[term] = doc_freq.get(term, 0) + 1
+    k1, b = 1.5, 0.75
+    ranked = []
+    for sid, tokens in docs.items():
+        frequencies = {}
+        for term in tokens:
+            frequencies[term] = frequencies.get(term, 0) + 1
+        score = 0.0
+        for term in query_tokens:
+            tf = frequencies.get(term, 0)
+            if not tf:
+                continue
+            df = doc_freq.get(term, 0)
+            idf = __import__("math").log(1 + (n_docs - df + 0.5) / (df + 0.5))
+            denominator = tf + k1 * (1 - b + b * len(tokens) / avg_len)
+            score += idf * (tf * (k1 + 1)) / denominator
+        if score > 0:
+            ranked.append((sid, score))
+    ranked.sort(key=lambda item: (-item[1], item[0]))
+    return ranked[:top_k]
+
 def evaluate_policy(name, segments, defer_from, baseline_context, expected, segment_hashes):
     start = time.perf_counter()
     built = build_variants(segments, {}, {}, defer_from)
@@ -122,17 +168,16 @@ def evaluate_policy(name, segments, defer_from, baseline_context, expected, segm
     reconstruction_failures = 0
     hydration_calls = 0
 
-    for qid, label, fact, _source in QUESTIONS:
+    for qid, label, query, fact, _source in QUESTIONS:
         q_start = time.perf_counter()
         active_has = fact.casefold() in active.casefold()
         hydrated_ids = []
         recovered_text = []
         if not active_has:
-            # Exact-evidence oracle selects candidates; hydration itself verifies
-            # the retrieved bytes against the source-segment SHA-256.
-            candidates = [sid for sid, original in store.items()
-                          if fact.casefold() in original.casefold()]
-            for sid in candidates:
+            # Independent BM25 retrieval sees only the question and deferred text.
+            # The expected evidence string is consulted only after retrieval for scoring.
+            candidates = retrieve_bm25(query, store, top_k=3)
+            for sid, _score in candidates:
                 hydrated_ids.append(sid)
                 try:
                     recovered_text.append(hydrate_verified(sid, store, segment_hashes))
@@ -149,7 +194,9 @@ def evaluate_policy(name, segments, defer_from, baseline_context, expected, segm
         total_retrieved += sum(lexical_units(x) for x in recovered_text)
         total_output += 8
         traces.append({
-            "question_id": qid, "evidence_label": label, "evidence": fact,
+            "question_id": qid, "evidence_label": label, "query": query, "evidence": fact,
+            "retrieval_mode": "bm25_lexical_top_3",
+            "retrieval_candidates": [{"entry_id": sid, "score": round(score, 6)} for sid, score in candidates] if not active_has else [],
             "visible_without_hydration": active_has,
             "hydrated_entry_ids": hydrated_ids,
             "registry_lexical_units": registry_units,
@@ -182,7 +229,7 @@ def evaluate_policy(name, segments, defer_from, baseline_context, expected, segm
 
 def main():
     segments, source_hashes, evidence_text, segment_hashes = load_real_documents()
-    for qid, label, fact, source in QUESTIONS:
+    for qid, label, query, fact, source in QUESTIONS:
         if fact.casefold() not in evidence_text[source].casefold():
             raise SystemExit(f"Evidence fixture {qid} not found in {source}: {fact!r}")
 
@@ -201,18 +248,19 @@ def main():
         "scope": "Offline evaluation on the project's actual README and research documentation; not an external corpus or LLM task benchmark.",
         "method": {
             "implementation": "csc_lch_bench.py build_variants; no-glyph path isolates deduplication, safe text compression, and lazy deferral.",
-            "retrieval": "ORACLE / UPPER-BOUND ONLY: scans every deferred paragraph for the exact required evidence string, then hydrates every matching paragraph. It has direct access to the expected answer and does not model query understanding, candidate ranking, ambiguity, or retrieval misses.",
-            "retrieval_mode": "exact_substring_oracle_upper_bound",
+            "retrieval": "Deterministic BM25 lexical retrieval ranks deferred paragraphs using only the natural-language query; the expected answer is used only after retrieval to score evidence recovery.",
+            "retrieval_mode": "bm25_lexical_top_3",
             "tier_assignment": "CURATED FIXTURE: tier_for() assigns tiers from a hand-authored section-name map. This is not an automatic tier classifier and must not be presented as production classification performance.",
             "baseline": "Full uncompressed source context repeated for each of the same 15 evidence questions.",
             "accounting": "Lexical units are a tokenizer-independent proxy, not actual model tokens. Active context and registry instructions are counted for every question; each answer is assigned 8 output units; each hydration prompt is assigned 12 units; retrieved source text is counted separately.",
             "integrity": "Each hydrated deferred paragraph is verified against SHA-256 of its original UTF-8 paragraph. Source-file SHA-256 values are recorded as fingerprints; this experiment does not prove byte-for-byte reconstruction of whole source files from the tiered segments.",
             "tier_coverage": "The historical reported-ablation table is explicitly classified as T5 archive content and Q15 requires retrieval of its 1.40x result.",
-            "evidence_recall_interpretation": "Oracle evidence recovery is an upper-bound fixture check, not semantic answer accuracy, realistic retrieval recall, or end-to-end task quality.",
+            "evidence_recall_interpretation": "Evidence recall measures whether a top-3 lexical retriever returned a paragraph containing the fixture evidence. It is not semantic answer accuracy or end-to-end task quality.",
             "limitations": [
                 "No LLM inference or semantic answer scoring.",
-                "Exact-match oracle retrieval is an upper bound, not a realistic retriever.",
+                "BM25 is a simple lexical baseline; it does not provide semantic matching or production-grade retrieval.",
                 "Tier assignment is curated by section name, not predicted by a classifier.",
+                "The 15 evaluation queries are hand-authored and in-domain.",
                 "Lexical units are not model tokenizer tokens.",
                 "Corpus is real project documentation but small and in-domain.",
                 "No provider latency, energy, or monetary cost is measured.",
