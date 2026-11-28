@@ -49,7 +49,7 @@ def sha256(data: bytes) -> str:
 
 def split_preserving_bytes(raw: bytes) -> list[bytes]:
     """Split at blank-line boundaries without discarding a single source byte."""
-    return [part for part in re.split(rb"(\\r?\\n[ \\t]*\\r?\\n)", raw) if part]
+    return [part for part in re.split(rb"(\r?\n[ \t]*\r?\n)", raw) if part]
 
 
 def archive_source(raw: bytes) -> list[dict]:
