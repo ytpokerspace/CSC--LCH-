@@ -38,10 +38,30 @@ class BenchmarkAccountingTests(unittest.TestCase):
     def setUpClass(cls):
         (cls.segments, cls.source_hashes, cls.evidence_text,
          cls.segment_hashes) = validation.load_real_documents()
-        for _qid, _label, fact, source in validation.QUESTIONS:
+        for _qid, _label, _query, fact, source in validation.QUESTIONS:
             if fact.casefold() not in cls.evidence_text[source].casefold():
                 raise AssertionError(f"Fixture evidence missing from {source}: {fact!r}")
         cls.baseline = validation.join(cls.segments)
+
+    def test_queries_do_not_contain_expected_evidence(self):
+        for _qid, _label, query, fact, _source in validation.QUESTIONS:
+            with self.subTest(query=query):
+                self.assertNotIn(fact.casefold(), query.casefold())
+
+    def test_bm25_retriever_uses_query_and_returns_ranked_candidates(self):
+        store = {
+            "doc001": "The project license is GPL-3.0-or-later.",
+            "doc002": "The project records its author and contributors.",
+            "doc003": "Historical ablation results reported a T3 ratio of 1.40x.",
+        }
+        ranked = validation.retrieve_bm25("What license governs this project?", store, top_k=2)
+        self.assertEqual(ranked[0][0], "doc001")
+        self.assertLessEqual(len(ranked), 2)
+        self.assertGreater(ranked[0][1], 0)
+
+    def test_bm25_retriever_rejects_invalid_top_k(self):
+        with self.assertRaisesRegex(ValueError, "top_k"):
+            validation.retrieve_bm25("license", {"doc001": "license"}, top_k=0)
 
     def test_historical_ablation_table_is_t5_archive(self):
         self.assertEqual(validation.tier_for("Reported ablation results", "milestone6_report.md"), 5)
