@@ -202,7 +202,7 @@ def main():
         "method": {
             "implementation": "csc_lch_bench.py build_variants; no-glyph path isolates deduplication, safe text compression, and lazy deferral.",
             "retrieval": "Exact-evidence oracle hydrates a deferred source segment when it contains the required evidence.",
-            "baseline": "Full uncompressed source context repeated for each of the same 14 evidence questions.",
+            "baseline": "Full uncompressed source context repeated for each of the same 15 evidence questions.",
             "accounting": "Lexical units are a tokenizer-independent proxy, not actual model tokens. Active context and registry instructions are counted for every question; each answer is assigned 8 output units; each hydration prompt is assigned 12 units; retrieved source text is counted separately.",
             "integrity": "Each deferred segment is verified at hydration against SHA-256 of its original UTF-8 source paragraph; mismatches fail reconstruction.",
             "tier_coverage": "The historical reported-ablation table is explicitly classified as T5 archive content and Q15 requires retrieval of its 1.40x result.",
@@ -219,6 +219,7 @@ def main():
         "corpus_sha256": corpus_hash,
         "source_sha256": source_hashes,
         "source_paragraphs": len(segments),
+        "source_paragraphs_by_tier": {f"T{tier}": sum(1 for seg in segments if seg.tier == tier) for tier in range(6)},
         "source_lexical_units": lexical_units(baseline_context),
         "baseline": {
             "observations": len(QUESTIONS),
