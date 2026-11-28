@@ -21,26 +21,26 @@ from csc_lch_bench import Seg, build_variants, join  # noqa: E402
 
 SOURCES = [
     ROOT / "README.md",
-    ROOT / "benchmarks" / "milestone6_report.md",
+    ROOT / "benchmarks" / "benchmarks/milestone6_report.md",
     ROOT / "ARAF" / "README.md",
 ]
 
 # Evidence strings are exact, auditable claims drawn from the frozen source files.
 QUESTIONS = [
     ("Q01", "project license", "GPL-3.0-or-later", "README.md"),
-    ("Q02", "source authority", "The source remains the authority.", "milestone6_report.md"),
+    ("Q02", "source authority", "The source remains the authority.", "benchmarks/milestone6_report.md"),
     ("Q03", "projection limitation", "Projected savings are not measured savings.", "README.md"),
-    ("Q04", "paired corpus control", "Use the same frozen corpus and question set for each policy.", "milestone6_report.md"),
+    ("Q04", "paired corpus control", "Use the same frozen corpus and question set for each policy.", "benchmarks/milestone6_report.md"),
     ("Q05", "evidence marker", "OBS", "README.md"),
     ("Q06", "inference marker", "INF", "README.md"),
     ("Q07", "speculation marker", "SPEC", "README.md"),
-    ("Q08", "latency limitation", "Hydration-call counts alone do not establish latency or cost.", "milestone6_report.md"),
+    ("Q08", "latency limitation", "Hydration-call counts alone do not establish latency or cost.", "benchmarks/milestone6_report.md"),
     ("Q09", "experiment evidence requirement", "Treat performance numbers as established only when the corresponding experiment has been run and its method and evidence are available.", "README.md"),
-    ("Q10", "offline evaluation constraint", "Do not make paid API calls in the default workflow.", "milestone6_report.md"),
+    ("Q10", "offline evaluation constraint", "Do not make paid API calls in the default workflow.", "benchmarks/milestone6_report.md"),
     ("Q11", "workload limitation", "nor workload will benefit", "README.md"),
     ("Q12", "author attribution", "William Gunnell Cox", "README.md"),
-    ("Q13", "retrieval principle", "Retrieve only what's needed, when it's needed.", "milestone6_report.md"),
-    ("Q14", "provisional operating policy", "T4: provisional default pending full-cost measurements.", "milestone6_report.md"),
+    ("Q13", "retrieval principle", "Retrieve only what's needed, when it's needed.", "benchmarks/milestone6_report.md"),
+    ("Q14", "provisional operating policy", "T4: provisional default pending full-cost measurements.", "benchmarks/milestone6_report.md"),
 ]
 
 def sha256(data: bytes) -> str:
@@ -58,7 +58,7 @@ def tier_for(section: str, source_name: str) -> int:
     }
     if section in critical:
         return 1
-    if source_name == "milestone6_report.md" and section in {
+    if source_name == "benchmarks/milestone6_report.md" and section in {
         "Reported ablation results", "Interpretation", "Provisional policy guidance"
     }:
         return 4
@@ -73,7 +73,7 @@ def load_real_documents():
         raw = path.read_bytes()
         source_hashes[str(path.relative_to(ROOT))] = sha256(raw)
         text = raw.decode("utf-8")
-        evidence_text[path.name] = text
+        evidence_text[str(path.relative_to(ROOT))] = text
         section = ""
         for block in re.split(r"\n\s*\n", text):
             block = block.strip()
