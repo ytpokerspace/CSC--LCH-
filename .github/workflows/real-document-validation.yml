@@ -4,6 +4,7 @@ on:
   push:
     branches:
       - research/real-corpus-validation-2026-11
+      - research/oracle-boundary-audit-2026-11
   pull_request:
     branches:
       - main
